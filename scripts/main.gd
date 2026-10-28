@@ -24,7 +24,7 @@ const ENEMY_TYPES := {
 		"size": 34.0,
 		"speed": 75.0,
 		"max_hp": 100,
-		"damage": 10,
+		"damage": 18,
 		"reward": 35,
 	},
 	"bird": {
@@ -33,7 +33,7 @@ const ENEMY_TYPES := {
 		"size": 24.0,
 		"speed": 145.0,
 		"max_hp": 55,
-		"damage": 6,
+		"damage": 12,
 		"reward": 28,
 	},
 	"golem": {
@@ -42,7 +42,7 @@ const ENEMY_TYPES := {
 		"size": 52.0,
 		"speed": 45.0,
 		"max_hp": 180,
-		"damage": 16,
+		"damage": 32,
 		"reward": 90,
 	},
 	"boss": {
@@ -50,8 +50,8 @@ const ENEMY_TYPES := {
 		"color": Color("#c1121f"),
 		"size": 110.0,
 		"speed": 30.0,
-		"max_hp": 3000,
-		"damage": 30,
+		"max_hp": 8000,
+		"damage": 60,
 		"reward": 1500,
 	},
 }
@@ -78,10 +78,10 @@ const ELEMENT_SKILLS := {
 # 劫难系统（阶段 11）：破境时触发
 # ==========================================
 const TRIBULATIONS := {
-	"strong":  {"name": "强敌劫",   "min": 1, "max": 2, "hp": 3.0, "dmg": 1.5, "size": 1.3, "color": "#a83232"},
-	"thunder": {"name": "天罚雷劫", "min": 1, "max": 1, "hp": 4.0, "dmg": 2.0, "size": 1.2, "color": "#4a6fd4"},
-	"demon":   {"name": "心魔劫",   "min": 1, "max": 1, "hp": 5.0, "dmg": 1.2, "size": 1.15, "color": "#7a2f8f"},
-	"three":   {"name": "斩三尸",   "min": 3, "max": 3, "hp": 3.5, "dmg": 1.4, "size": 1.0, "color": "#2f7a5f"},
+	"strong":  {"name": "强敌劫",   "min": 1, "max": 2, "hp": 3.0, "dmg": 1.8, "size": 1.3, "color": "#a83232"},
+	"thunder": {"name": "天罚雷劫", "min": 1, "max": 1, "hp": 4.0, "dmg": 2.5, "size": 1.2, "color": "#4a6fd4"},
+	"demon":   {"name": "心魔劫",   "min": 1, "max": 1, "hp": 5.0, "dmg": 1.5, "size": 1.15, "color": "#7a2f8f"},
+	"three":   {"name": "斩三尸",   "min": 3, "max": 3, "hp": 3.5, "dmg": 1.7, "size": 1.0, "color": "#2f7a5f"},
 }
 
 # 化神（realm_index >= 5）之后才出现雷劫/心魔/三尸
@@ -101,7 +101,7 @@ const TRIBULATION_REWARDS := [
 # 波次仅作记录（每波击杀数），不限制进度、不触发首领
 const WAVE_KILLS_PER_WAVE := 20
 const ELITE_HP_MUL := 1.6
-const ELITE_DMG_MUL := 1.4
+const ELITE_DMG_MUL := 1.6
 const ELITE_SIZE_MUL := 1.25
 const ELITE_REWARD_MUL := 2
 
@@ -171,7 +171,7 @@ const STAGE_NAMES := ["初期", "中期", "圆满"]
 const SKILLS := {
 	# ---- 炼己 ----
 	"剑气诀":     {"desc": "剑气伤害 +8",    "stat": "sword", "value": 8},
-	"护体灵气":   {"desc": "减伤 +4",        "stat": "armor", "value": 4},
+	"护体灵气":   {"desc": "减伤 1.5%",        "stat": "armor", "value": 1.5},
 	"疾风步":     {"desc": "移速 +25",       "stat": "speed", "value": 25},
 	"凝神":       {"desc": "暴击率 +5%",     "stat": "crit",  "value": 5},
 	"吐纳诀":     {"desc": "生命回复 +0.5/秒", "stat": "regen", "value": 0.5},
@@ -180,7 +180,7 @@ const SKILLS := {
 	"远击诀":     {"desc": "剑气射程 +40",   "stat": "range", "value": 40},
 	# ---- 筑基 ----
 	"御剑术":     {"desc": "剑气伤害 +18",   "stat": "sword", "value": 18},
-	"金钟罩":     {"desc": "减伤 +10",       "stat": "armor", "value": 10},
+	"金钟罩":     {"desc": "减伤 2.5%",       "stat": "armor", "value": 2.5},
 	"踏云步":     {"desc": "移速 +45",       "stat": "speed", "value": 45},
 	"心眼":       {"desc": "暴击率 +10%",    "stat": "crit",  "value": 10},
 	"周天功":     {"desc": "生命回复 +1.0/秒", "stat": "regen", "value": 1.0},
@@ -189,7 +189,7 @@ const SKILLS := {
 	"穿云式":     {"desc": "剑气射程 +70",   "stat": "range", "value": 70},
 	# ---- 炼精 ----
 	"精元剑气":   {"desc": "剑气伤害 +26",   "stat": "sword", "value": 26},
-	"精血护体":   {"desc": "减伤 +13",       "stat": "armor", "value": 13},
+	"精血护体":   {"desc": "减伤 3.0%",       "stat": "armor", "value": 3.0},
 	"精行步":     {"desc": "移速 +60",       "stat": "speed", "value": 60},
 	"精觉":       {"desc": "暴击率 +13%",    "stat": "crit",  "value": 13},
 	"精元回春":   {"desc": "生命回复 +1.5/秒", "stat": "regen", "value": 1.5},
@@ -198,7 +198,7 @@ const SKILLS := {
 	"精远击":     {"desc": "剑气射程 +100",  "stat": "range", "value": 100},
 	# ---- 化炁 ----
 	"炁冲剑脉":   {"desc": "剑气伤害 +36",   "stat": "sword", "value": 36},
-	"炁盾":       {"desc": "减伤 +18",       "stat": "armor", "value": 18},
+	"炁盾":       {"desc": "减伤 3.5%",       "stat": "armor", "value": 3.5},
 	"罡气行云":   {"desc": "移速 +80",       "stat": "speed", "value": 80},
 	"炁感":       {"desc": "暴击率 +17%",    "stat": "crit",  "value": 17},
 	"炁养周天":   {"desc": "生命回复 +2.0/秒", "stat": "regen", "value": 2.0},
@@ -207,7 +207,7 @@ const SKILLS := {
 	"炁破长空":   {"desc": "剑气射程 +140",  "stat": "range", "value": 140},
 	# ---- 炼炁 ----
 	"炁御剑":     {"desc": "剑气伤害 +48",   "stat": "sword", "value": 48},
-	"炁墙":       {"desc": "减伤 +24",       "stat": "armor", "value": 24},
+	"炁墙":       {"desc": "减伤 4.0%",       "stat": "armor", "value": 4.0},
 	"缩地成寸":   {"desc": "移速 +105",      "stat": "speed", "value": 105},
 	"炁视":       {"desc": "暴击率 +22%",    "stat": "crit",  "value": 22},
 	"炼炁化生":   {"desc": "生命回复 +2.5/秒", "stat": "regen", "value": 2.5},
@@ -216,7 +216,7 @@ const SKILLS := {
 	"炼炁远击":   {"desc": "剑气射程 +190",  "stat": "range", "value": 190},
 	# ---- 化神 ----
 	"神识御剑":   {"desc": "剑气伤害 +62",   "stat": "sword", "value": 62},
-	"神念护体":   {"desc": "减伤 +30",       "stat": "armor", "value": 30},
+	"神念护体":   {"desc": "减伤 4.5%",       "stat": "armor", "value": 4.5},
 	"神行术":     {"desc": "移速 +130",      "stat": "speed", "value": 130},
 	"神觉":       {"desc": "暴击率 +27%",    "stat": "crit",  "value": 27},
 	"神元回春":   {"desc": "生命回复 +3.0/秒", "stat": "regen", "value": 3.0},
@@ -225,7 +225,7 @@ const SKILLS := {
 	"神识远照":   {"desc": "剑气射程 +250",  "stat": "range", "value": 250},
 	# ---- 炼神 ----
 	"炼神剑意":   {"desc": "剑气伤害 +80",   "stat": "sword", "value": 80},
-	"神元护体":   {"desc": "减伤 +38",       "stat": "armor", "value": 38},
+	"神元护体":   {"desc": "减伤 5.0%",       "stat": "armor", "value": 5.0},
 	"踏虚而行":   {"desc": "移速 +160",      "stat": "speed", "value": 160},
 	"洞神":       {"desc": "暴击率 +33%",    "stat": "crit",  "value": 33},
 	"炼神养元":   {"desc": "生命回复 +3.5/秒", "stat": "regen", "value": 3.5},
@@ -234,7 +234,7 @@ const SKILLS := {
 	"炼神远击":   {"desc": "剑气射程 +320",  "stat": "range", "value": 320},
 	# ---- 返虚 ----
 	"虚空剑意":   {"desc": "剑气伤害 +100",  "stat": "sword", "value": 100},
-	"返虚护体":   {"desc": "减伤 +46",       "stat": "armor", "value": 46},
+	"返虚护体":   {"desc": "减伤 5.5%",       "stat": "armor", "value": 5.5},
 	"返虚游":     {"desc": "移速 +195",      "stat": "speed", "value": 195},
 	"洞虚":       {"desc": "暴击率 +39%",    "stat": "crit",  "value": 39},
 	"返虚化生":   {"desc": "生命回复 +4.0/秒", "stat": "regen", "value": 4.0},
@@ -243,7 +243,7 @@ const SKILLS := {
 	"返虚远游":   {"desc": "剑气射程 +400",  "stat": "range", "value": 400},
 	# ---- 炼虚 ----
 	"虚剑破空":   {"desc": "剑气伤害 +125",  "stat": "sword", "value": 125},
-	"虚元金身":   {"desc": "减伤 +56",       "stat": "armor", "value": 56},
+	"虚元金身":   {"desc": "减伤 6.0%",       "stat": "armor", "value": 6.0},
 	"逍遥游":     {"desc": "移速 +235",      "stat": "speed", "value": 235},
 	"虚瞳":       {"desc": "暴击率 +46%",    "stat": "crit",  "value": 46},
 	"炼虚长生":   {"desc": "生命回复 +4.5/秒", "stat": "regen", "value": 4.5},
@@ -252,7 +252,7 @@ const SKILLS := {
 	"炼虚远击":   {"desc": "剑气射程 +500",  "stat": "range", "value": 500},
 	# ---- 合道 ----
 	"大道剑诀":   {"desc": "剑气伤害 +155",  "stat": "sword", "value": 155},
-	"合道金身":   {"desc": "减伤 +68",       "stat": "armor", "value": 68},
+	"合道金身":   {"desc": "减伤 6.5%",       "stat": "armor", "value": 6.5},
 	"天地同游":   {"desc": "移速 +280",      "stat": "speed", "value": 280},
 	"天眼":       {"desc": "暴击率 +54%",    "stat": "crit",  "value": 54},
 	"合道长生":   {"desc": "生命回复 +5.0/秒", "stat": "regen", "value": 5.0},
@@ -263,14 +263,14 @@ const SKILLS := {
 	"阳神御剑":   {"desc": "剑气 +200，暴击 +20%", "stat": "multi", "effects": [
 		{"stat": "sword", "value": 200}, {"stat": "crit", "value": 20}]},
 	"不坏仙躯":   {"desc": "最大生命 +120 并回满，减伤 +85", "stat": "multi", "effects": [
-		{"stat": "max_hp", "value": 120}, {"stat": "armor", "value": 85}]},
+		{"stat": "max_hp", "value": 120}, {"stat": "armor", "value": 8.0}]},
 	"咫尺天涯":   {"desc": "移速 +340，攻击间隔 -0.10 秒", "stat": "multi", "effects": [
 		{"stat": "speed", "value": 340}, {"stat": "attack_speed", "value": 0.10}]},
 	# ---- 天仙 ----
 	"万剑朝宗":   {"desc": "剑气 +300，暴击 +30%", "stat": "multi", "effects": [
 		{"stat": "sword", "value": 300}, {"stat": "crit", "value": 30}]},
 	"太虚不灭":   {"desc": "最大生命 +200 并回满，减伤 +120", "stat": "multi", "effects": [
-		{"stat": "max_hp", "value": 200}, {"stat": "armor", "value": 120}]},
+		{"stat": "max_hp", "value": 200}, {"stat": "armor", "value": 10.0}]},
 	"逍遥无极":   {"desc": "移速 +450，攻击间隔 -0.15 秒", "stat": "multi", "effects": [
 		{"stat": "speed", "value": 450}, {"stat": "attack_speed", "value": 0.15}]},
 	# ---- 属性法术（化炁起出现） ----
@@ -290,13 +290,13 @@ const IMMORTAL_PATHS := {
 		"flavor": "阴神不散，出窍夺舍。",
 	},
 	"人仙": {
-		"desc": "最大生命 +60 并回满，减伤 +10",
-		"max_hp": 60, "armor": 10, "heal": true,
+		"desc": "最大生命 +60 并回满，减伤 8%",
+		"max_hp": 60, "armor": 8, "heal": true,
 		"flavor": "长生久视，肉身不坏。",
 	},
 	"地仙": {
-		"desc": "减伤 +25，最大生命 +40，移速 -20",
-		"armor": 25, "max_hp": 40, "speed": -20.0,
+		"desc": "减伤 12%，最大生命 +40，移速 -20",
+		"armor": 12, "max_hp": 40, "speed": -20.0,
 		"flavor": "住世长生，不慕飞升。",
 	},
 }
@@ -361,7 +361,7 @@ var path_choices: Array[Dictionary] = []
 
 # 功法加成
 var sword_bonus: int = 0
-var armor_reduction: int = 0
+var damage_reduction: float = 0.0   # 受伤减免百分比（0.0 ~ 0.7）
 var speed_bonus: float = 0.0
 var crit_bonus: float = 0.0     # 暴击率加成（百分点，如 5 表示 +5%）
 var hp_regen: float = 0.0       # 每秒生命回复
@@ -504,7 +504,8 @@ func update_enemies(delta: float) -> void:
 
 		if distance < contact_distance and damage_cooldown <= 0.0:
 			var enemy_damage: int = int(e.get("damage", ENEMY_TYPES[e["type"]]["damage"]))
-			var actual_damage := maxi(1, enemy_damage - armor_reduction)
+			var reduction: float = clampf(damage_reduction, 0.0, 0.7)
+			var actual_damage := maxi(1, int(round(float(enemy_damage) * (1.0 - reduction))))
 			player_hp -= actual_damage
 			damage_cooldown = 0.8
 
@@ -669,8 +670,31 @@ func apply_hit(index: int, damage: int, is_critical: bool, element: String) -> v
 
 	message_timer = 0.6
 
+	# 首领阶段推进
+	if str(e["type"]) == "boss" and int(e["hp"]) > 0:
+		check_boss_phase(e)
+
 	if int(e["hp"]) <= 0:
 		kill_enemy(index)
+
+
+# 首领三阶段：70% / 40% 血量时强化
+func check_boss_phase(e: Dictionary) -> void:
+	var ratio := float(e["hp"]) / float(e["max_hp"])
+	var phase := int(e.get("phase", 1))
+
+	if phase < 2 and ratio <= 0.70:
+		e["phase"] = 2
+		e["speed"] = float(e.get("base_speed", 30.0)) * 1.3
+		e["damage"] = int(float(e.get("base_damage", 60)) * 1.25)
+		message_text = "★ 魔道老祖狂暴！速度与伤害提升"
+		message_timer = 2.5
+	elif phase < 3 and ratio <= 0.40:
+		e["phase"] = 3
+		e["speed"] = float(e.get("base_speed", 30.0)) * 1.6
+		e["damage"] = int(float(e.get("base_damage", 60)) * 1.6)
+		message_text = "★ 魔道老祖拼命了！"
+		message_timer = 2.5
 
 
 # 雷霆连锁：对 200px 内另一只造成一半伤害
@@ -877,6 +901,11 @@ func spawn_enemy(elite: bool = false) -> void:
 	var reward: int = int(data["reward"])
 	var damage: int = int(data["damage"])
 
+	# 随境界成长：血量 +35%/境，伤害 +25%/境
+	var progress := float(get_progress()) / 3.0
+	max_hp = int(float(max_hp) * (1.0 + progress * 0.35))
+	damage = int(float(damage) * (1.0 + progress * 0.25))
+
 	if elite:
 		max_hp = int(max_hp * ELITE_HP_MUL)
 		size *= ELITE_SIZE_MUL
@@ -898,23 +927,42 @@ func spawn_enemy(elite: bool = false) -> void:
 
 
 # 生成首领（单独一只，不补普通妖兽）
+# 估算玩家当前 DPS（用于首领动态血量）
+func estimate_player_dps() -> float:
+	var per_hit := float(attack_damage + sword_bonus)
+	var crit_rate := clampf(0.15 + crit_bonus / 100.0, 0.0, 1.0)
+	var avg_hit := per_hit * (1.0 + crit_rate)      # 暴击 ×2 的期望
+	var interval := maxf(0.1, attack_interval)
+	return avg_hit / interval * float(1 + extra_shots)
+
+
 # 飞升试炼：达到天仙后自动触发（原由波次触发）
 func spawn_boss() -> void:
 	var data: Dictionary = ENEMY_TYPES["boss"]
 	enemies.clear()
+	# 动态血量：按玩家 DPS 反推，目标约 25 秒击杀
+	var dps := estimate_player_dps()
+	# 目标约 25 秒击杀；绝对下限 1500（防秒杀），上限 200000
+	var boss_hp := int(clampf(dps * 25.0, 1500.0, 200000.0))
+
 	enemies.append({
 		"type": "boss",
 		"pos": Vector2(screen_size.x / 2.0, 120.0),
 		"speed": float(data["speed"]),
 		"size": float(data["size"]),
-		"max_hp": int(data["max_hp"]),
-		"hp": int(data["max_hp"]),
+		"max_hp": boss_hp,
+		"hp": boss_hp,
 		"hit_flash": 0.0,
 		"elite": false,
 		"damage": int(data["damage"]),
 		"reward": int(data["reward"]),
+		"phase": 1,
+		"base_speed": float(data["speed"]),
+		"base_damage": int(data["damage"]),
 	})
 	boss_active = true
+	message_text = "★ 魔道老祖降临！血量 " + str(boss_hp)
+	message_timer = 3.0
 
 
 # 当前波次名称（仅记录）
@@ -1061,7 +1109,7 @@ func apply_stat(stat: String, value: float) -> void:
 		"sword":
 			sword_bonus += int(value)
 		"armor":
-			armor_reduction += int(value)
+			damage_reduction = minf(0.7, damage_reduction + value / 100.0)
 		"speed":
 			speed_bonus += value
 		"crit":
@@ -1284,7 +1332,7 @@ func choose_path(index: int) -> void:
 	if d.has("crit"):
 		crit_bonus = minf(100.0, crit_bonus + float(d["crit"]))
 	if d.has("armor"):
-		armor_reduction += int(d["armor"])
+		damage_reduction = minf(0.7, damage_reduction + float(d["armor"]) / 100.0)
 	if d.has("max_hp"):
 		player_max_hp += int(d["max_hp"])
 		if bool(d.get("heal", false)):
@@ -1473,7 +1521,7 @@ func restart_game() -> void:
 	hp_regen = 0.0
 
 	sword_bonus = 0
-	armor_reduction = 0
+	damage_reduction = 0.0
 	speed_bonus = 0.0
 	crit_bonus = 0.0
 
@@ -1686,7 +1734,7 @@ func _draw() -> void:
 		ThemeDB.fallback_font,
 		Vector2(20, 132),
 		"剑气 +" + str(sword_bonus)
-		+ "  减伤 " + str(armor_reduction)
+		+ "  减伤 " + str(int(round(damage_reduction * 100.0))) + "%"
 		+ "  移速 +" + str(int(speed_bonus))
 		+ "  暴击 +" + str(int(crit_bonus)) + "%",
 		HORIZONTAL_ALIGNMENT_LEFT,
