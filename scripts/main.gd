@@ -159,8 +159,52 @@ const SKILLS := {
 	# ---- 合道 ----
 	"大道剑诀":   {"desc": "剑气伤害 +155",  "stat": "sword", "value": 155},
 	"合道金身":   {"desc": "减伤 +68",       "stat": "armor", "value": 68},
-	"天地同游":   {"desc": "移速 +280",      "stat": "speed", "value": 280},
+	"逍遥天地":   {"desc": "移速 +280",      "stat": "speed", "value": 280},
 	"天眼":       {"desc": "暴击率 +54%",    "stat": "crit",  "value": 54},
+	# ---- 神仙 ----
+	"阳神御剑":   {"desc": "剑气 +200，暴击 +20%", "stat": "multi", "effects": [
+		{"stat": "sword", "value": 200}, {"stat": "crit", "value": 20}]},
+	"不坏仙躯":   {"desc": "最大生命 +120 并回满，减伤 +85", "stat": "multi", "effects": [
+		{"stat": "max_hp", "value": 120}, {"stat": "armor", "value": 85}]},
+	"咫尺天涯":   {"desc": "移速 +340，攻击间隔 -0.10 秒", "stat": "multi", "effects": [
+		{"stat": "speed", "value": 340}, {"stat": "attack_speed", "value": 0.10}]},
+	# ---- 天仙 ----
+	"万剑朝宗":   {"desc": "剑气 +300，暴击 +30%", "stat": "multi", "effects": [
+		{"stat": "sword", "value": 300}, {"stat": "crit", "value": 30}]},
+	"太虚不灭":   {"desc": "最大生命 +200 并回满，减伤 +120", "stat": "multi", "effects": [
+		{"stat": "max_hp", "value": 200}, {"stat": "armor", "value": 120}]},
+	"天地同游":   {"desc": "移速 +450，攻击间隔 -0.15 秒", "stat": "multi", "effects": [
+		{"stat": "speed", "value": 450}, {"stat": "attack_speed", "value": 0.15}]},
+}
+
+# ==========================================
+# 仙道三选一（炼虚合道·圆满后触发，不可逆）
+# ==========================================
+const IMMORTAL_PATHS := {
+	"鬼仙": {
+		"desc": "暴击率 +20%，最大生命 -20",
+		"crit": 20.0, "max_hp": -20,
+		"flavor": "阴神不散，出窍夺舍。",
+	},
+	"人仙": {
+		"desc": "最大生命 +60 并回满，减伤 +10",
+		"max_hp": 60, "armor": 10, "heal": true,
+		"flavor": "长生久视，肉身不坏。",
+	},
+	"地仙": {
+		"desc": "减伤 +25，最大生命 +40，移速 -20",
+		"armor": 25, "max_hp": 40, "speed": -20.0,
+		"flavor": "住世长生，不慕飞升。",
+	},
+}
+
+# 仙阶修为需求：[仙道→神仙, 神仙→天仙]
+const IMMORTAL_XP := [310, 380]
+
+# 各仙阶可选的功法
+const IMMORTAL_SKILLS := {
+	"神仙": ["阳神御剑", "不坏仙躯", "咫尺天涯"],
+	"天仙": ["万剑朝宗", "太虚不灭", "天地同游"],
 }
 
 # 妖兽数组（阶段 9：同屏多只）
@@ -187,9 +231,15 @@ var projectile_is_critical: Array[bool] = []
 # 修为与境界
 var kill_count: int = 0
 var cultivation: int = 0
-var realm_index: int = 0        # 0=炼己 1=筑基 2=炼精化炁 3=炼炁化神 4=炼神返虚 5=炼虚合道
+var realm_index: int = 0        # 凡人境界索引 0..9
 var stage_index: int = 0        # 0=初期 1=中期 2=圆满
 var upgrade_pending: bool = false
+
+# 仙道（阶段 9 第二刀）
+var immortal_path: String = ""      # 鬼仙/人仙/地仙，空=未证道
+var immortal_stage: int = 0         # 0=凡人 1=仙道 2=神仙 3=天仙
+var path_choice_pending: bool = false
+var path_choices: Array[Dictionary] = []
 
 # 功法加成
 var sword_bonus: int = 0
@@ -222,7 +272,7 @@ func _process(delta: float) -> void:
 		queue_redraw()
 		return
 
-	if upgrade_pending:
+	if upgrade_pending or path_choice_pending:
 		queue_redraw()
 		return
 
@@ -420,6 +470,10 @@ func kill_enemy(index: int) -> void:
 	message_text = "击败" + enemy_name + "！修为 +" + str(reward)
 	message_timer = 1.0
 
+	# 仙道选择界面：不补怪
+	if path_choice_pending:
+		return
+
 	# 已封顶：修为停在阈值，不再触发升级
 	if is_max_realm():
 		cultivation = mini(cultivation, get_next_level_xp())
@@ -500,45 +554,70 @@ func reset_enemies() -> void:
 
 # 当前境界名称，如「炼精化炁」
 func get_realm_name() -> String:
+	if immortal_stage == 1:
+		return immortal_path
+	if immortal_stage == 2:
+		return "神仙"
+	if immortal_stage >= 3:
+		return "天仙"
 	return str(REALMS[realm_index]["name"])
 
 
 # 当前小阶名称，如「中期」
 func get_stage_name() -> String:
+	if immortal_stage >= 1:
+		return ""
 	return str(STAGE_NAMES[stage_index])
 
 
-# 完整境界，如「炼精化炁·中期」
+# 完整境界，如「炼精·中期」或「鬼仙」
 func get_full_realm_name() -> String:
+	if immortal_stage >= 1:
+		return get_realm_name()
 	return get_realm_name() + "·" + get_stage_name()
 
 
-# 升到下一小阶需要的修为
+# 升到下一阶段需要的修为
 func get_next_level_xp() -> int:
-	return int(REALMS[realm_index]["xp"][stage_index])
+	if immortal_stage == 0:
+		return int(REALMS[realm_index]["xp"][stage_index])
+	if immortal_stage == 1:
+		return int(IMMORTAL_XP[0])      # 仙道 → 神仙
+	if immortal_stage == 2:
+		return int(IMMORTAL_XP[1])      # 神仙 → 天仙
+	return 999999                        # 天仙封顶
 
 
-# 总进度 0..17，用于妖兽难度
+# 总进度，用于妖兽难度
 func get_progress() -> int:
+	if immortal_stage >= 1:
+		return 30 + (immortal_stage - 1) * 3
 	return realm_index * 3 + stage_index
 
 
-# 当前境界的功法池
+# 当前阶段可选功法池
 func get_current_skill_pool() -> Array:
+	if immortal_stage == 1:
+		return IMMORTAL_SKILLS["神仙"]
+	if immortal_stage == 2:
+		return IMMORTAL_SKILLS["天仙"]
 	return REALMS[realm_index]["skills"]
 
 
-# 是否已到本阶段封顶（炼虚合道·圆满）
+# 是否已到封顶（天仙）
 func is_max_realm() -> bool:
-	return realm_index >= REALMS.size() - 1 and stage_index >= STAGE_NAMES.size() - 1
+	return immortal_stage >= 3
+
+
+# 是否已证仙道
+func is_immortal() -> bool:
+	return immortal_stage >= 1
 
 
 func begin_upgrade() -> void:
 	upgrade_pending = true
 
 	var pool: Array = get_current_skill_pool()
-
-	# 从本境界 4 种功法中随机取 3 种
 	var picked: Array = pool.duplicate()
 	picked.shuffle()
 
@@ -553,6 +632,38 @@ func begin_upgrade() -> void:
 		})
 
 
+# 应用一个功法的效果（支持单效果与 multi 多效果）
+func apply_skill_effect(skill_name: String) -> void:
+	var data: Dictionary = SKILLS[skill_name]
+
+	if str(data["stat"]) == "multi":
+		for eff in data["effects"]:
+			apply_stat(str(eff["stat"]), float(eff["value"]))
+		return
+
+	apply_stat(str(data["stat"]), float(data["value"]))
+
+
+# 单项属性加成
+func apply_stat(stat: String, value: float) -> void:
+	match stat:
+		"sword":
+			sword_bonus += int(value)
+		"armor":
+			armor_reduction += int(value)
+		"speed":
+			speed_bonus += value
+		"crit":
+			crit_bonus = minf(100.0, crit_bonus + value)
+		"max_hp":
+			player_max_hp += int(value)
+			player_hp = mini(player_hp + maxi(0, int(value)), player_max_hp)
+			if value > 0:
+				player_hp = player_max_hp   # 提升上限时回满
+		"attack_speed":
+			attack_interval = maxf(0.1, attack_interval - value)
+
+
 func choose_skill(index: int) -> void:
 	if not upgrade_pending:
 		return
@@ -562,43 +673,97 @@ func choose_skill(index: int) -> void:
 
 	var chosen: Dictionary = skill_choices[index]
 	var skill_name: String = chosen["name"]
-	var data: Dictionary = SKILLS[skill_name]
 
-	# 统一按 stat 处理效果，加新功法只需在 SKILLS 里加一行
-	match str(data["stat"]):
-		"sword":
-			sword_bonus += int(data["value"])
-		"armor":
-			armor_reduction += int(data["value"])
-		"speed":
-			speed_bonus += float(data["value"])
-		"crit":
-			crit_bonus += float(data["value"])
-
+	apply_skill_effect(skill_name)
 	learned_skills.append(skill_name)
 
-	# 推进小境界
-	stage_index += 1
-
-	if stage_index >= STAGE_NAMES.size():
-		stage_index = 0
-		realm_index += 1
-
-		# 暂未实现仙道，先封顶在炼虚合道·圆满
-		if realm_index >= REALMS.size():
-			realm_index = REALMS.size() - 1
-			stage_index = STAGE_NAMES.size() - 1
-
 	upgrade_pending = false
-
 	message_text = "习得功法：" + skill_name
 	message_timer = 1.5
 
-	# 修为溢出：剩余修为仍够升下一阶时，连续弹升级
+	advance_realm()
+	after_advance()
+
+
+# 推进境界（凡人 → 仙道 → 神仙 → 天仙）
+func advance_realm() -> void:
+	# 仙阶：神仙 → 天仙 → 封顶
+	if immortal_stage >= 1:
+		immortal_stage = mini(immortal_stage + 1, 3)
+		return
+
+	stage_index += 1
+
+	if stage_index < STAGE_NAMES.size():
+		return
+
+	stage_index = 0
+	realm_index += 1
+
+	# 凡人十境走完 → 仙道三选一
+	if realm_index >= REALMS.size():
+		realm_index = REALMS.size() - 1
+		stage_index = STAGE_NAMES.size() - 1
+		begin_path_choice()
+
+
+# 升级后：检查是否连续升级，否则补怪
+func after_advance() -> void:
 	if not is_max_realm() and cultivation >= get_next_level_xp():
 		cultivation -= get_next_level_xp()
 		begin_upgrade()
 		return
+
+	refill_enemies()
+
+
+# ==========================================
+# 仙道三选一
+# ==========================================
+
+func begin_path_choice() -> void:
+	path_choice_pending = true
+	path_choices.clear()
+
+	for key in IMMORTAL_PATHS.keys():
+		var d: Dictionary = IMMORTAL_PATHS[key]
+		path_choices.append({
+			"name": key,
+			"desc": str(d["desc"]),
+			"flavor": str(d["flavor"]),
+		})
+
+
+func choose_path(index: int) -> void:
+	if not path_choice_pending:
+		return
+
+	if index < 0 or index >= path_choices.size():
+		return
+
+	var chosen: Dictionary = path_choices[index]
+	var path_name: String = chosen["name"]
+	var d: Dictionary = IMMORTAL_PATHS[path_name]
+
+	immortal_path = path_name
+	immortal_stage = 1
+	path_choice_pending = false
+
+	if d.has("crit"):
+		crit_bonus = minf(100.0, crit_bonus + float(d["crit"]))
+	if d.has("armor"):
+		armor_reduction += int(d["armor"])
+	if d.has("max_hp"):
+		player_max_hp += int(d["max_hp"])
+		if bool(d.get("heal", false)):
+			player_hp = player_max_hp
+		else:
+			player_hp = mini(player_hp, player_max_hp)
+	if d.has("speed"):
+		speed_bonus += float(d["speed"])
+
+	message_text = "证道" + path_name + "！"
+	message_timer = 2.0
 
 	refill_enemies()
 
@@ -614,6 +779,33 @@ func get_skill_card_rect(index: int) -> Rect2:
 		Vector2(screen_size.x / 2.0 - 200.0, card_y),
 		Vector2(400, 54)
 	)
+
+
+# 仙道卡片矩形（比功法卡片高，因为有道途说明）
+func get_path_card_rect(index: int) -> Rect2:
+	var card_h := 74.0
+	var gap := 8.0
+	var total := 3.0 * card_h + 2.0 * gap
+	var start_y := screen_size.y / 2.0 - total / 2.0 + 26.0
+	return Rect2(
+		Vector2(screen_size.x / 2.0 - 250.0, start_y + float(index) * (card_h + gap)),
+		Vector2(500, card_h)
+	)
+
+
+func get_path_index_at(pos: Vector2) -> int:
+	if not path_choice_pending:
+		return -1
+	for i in range(path_choices.size()):
+		if get_path_card_rect(i).has_point(pos):
+			return i
+	return -1
+
+
+func get_hovered_path_index() -> int:
+	if not path_choice_pending:
+		return -1
+	return get_path_index_at(get_viewport().get_mouse_position())
 
 
 # 某个坐标点落在哪张卡片上，-1 表示没有
@@ -637,17 +829,22 @@ func get_hovered_skill_index() -> int:
 
 
 func _input(event: InputEvent) -> void:
-	# 鼠标点击选择功法（用事件自带坐标，比查询鼠标位置更可靠）
+	# 鼠标点击选择（功法或仙道）
 	if event is InputEventMouseButton and event.pressed and event.button_index == MOUSE_BUTTON_LEFT:
 		if upgrade_pending:
 			var index := get_skill_index_at(event.position)
 			if index >= 0:
 				choose_skill(index)
 				get_viewport().set_input_as_handled()
+		elif path_choice_pending:
+			var pindex := get_path_index_at(event.position)
+			if pindex >= 0:
+				choose_path(pindex)
+				get_viewport().set_input_as_handled()
 		return
 
 	# 鼠标移动时刷新悬停高亮
-	if event is InputEventMouseMotion and upgrade_pending:
+	if event is InputEventMouseMotion and (upgrade_pending or path_choice_pending):
 		queue_redraw()
 
 
@@ -667,6 +864,15 @@ func _unhandled_input(event: InputEvent) -> void:
 				KEY_3:
 					choose_skill(2)
 
+		if path_choice_pending:
+			match event.keycode:
+				KEY_1:
+					choose_path(0)
+				KEY_2:
+					choose_path(1)
+				KEY_3:
+					choose_path(2)
+
 
 func restart_game() -> void:
 	player_pos = screen_size / 2.0
@@ -678,6 +884,10 @@ func restart_game() -> void:
 	cultivation = 0
 	realm_index = 0
 	stage_index = 0
+	immortal_path = ""
+	immortal_stage = 0
+	path_choice_pending = false
+	path_choices.clear()
 
 	sword_bonus = 0
 	armor_reduction = 0
@@ -902,6 +1112,96 @@ func _draw() -> void:
 			360,
 			18,
 			Color("#ffe9a6")
+		)
+
+	# 仙道三选一界面（紫色主题，与普通升级区分）
+	if path_choice_pending:
+		draw_rect(
+			Rect2(Vector2.ZERO, screen_size),
+			Color(0.08, 0.02, 0.12, 0.88)
+		)
+
+		draw_string(
+			ThemeDB.fallback_font,
+			Vector2(screen_size.x / 2.0 - 220.0, screen_size.y / 2.0 - 190.0),
+			"✦ 仙 道 抉 择 ✦",
+			HORIZONTAL_ALIGNMENT_CENTER,
+			440,
+			34,
+			Color("#ffd76e")
+		)
+
+		draw_string(
+			ThemeDB.fallback_font,
+			Vector2(screen_size.x / 2.0 - 220.0, screen_size.y / 2.0 - 150.0),
+			"合道 · 圆满  →  证道成仙",
+			HORIZONTAL_ALIGNMENT_CENTER,
+			440,
+			20,
+			Color("#e0c8ff")
+		)
+
+		draw_string(
+			ThemeDB.fallback_font,
+			Vector2(screen_size.x / 2.0 - 220.0, screen_size.y / 2.0 - 122.0),
+			"此择不可逆，慎之。",
+			HORIZONTAL_ALIGNMENT_CENTER,
+			440,
+			16,
+			Color("#b89ad6")
+		)
+
+		for i in range(path_choices.size()):
+			var card := get_path_card_rect(i)
+			var hovered := (i == get_hovered_path_index())
+
+			if hovered:
+				draw_rect(card, Color("#3a2050"))
+				draw_rect(card, Color("#ffd76e"), false, 3.0)
+			else:
+				draw_rect(card, Color("#241433"))
+				draw_rect(card, Color("#8f6bb5"), false, 2.0)
+
+			var pc: Dictionary = path_choices[i]
+
+			draw_string(
+				ThemeDB.fallback_font,
+				Vector2(card.position.x + 18.0, card.position.y + 30.0),
+				str(i + 1) + ". " + str(pc["name"]),
+				HORIZONTAL_ALIGNMENT_LEFT,
+				460,
+				24,
+				Color("#ffd76e") if hovered else Color("#ffe9b0")
+			)
+
+			draw_string(
+				ThemeDB.fallback_font,
+				Vector2(card.position.x + 18.0, card.position.y + 54.0),
+				str(pc["desc"]),
+				HORIZONTAL_ALIGNMENT_LEFT,
+				460,
+				16,
+				Color.WHITE
+			)
+
+			draw_string(
+				ThemeDB.fallback_font,
+				Vector2(card.position.x + 18.0, card.position.y + 74.0),
+				str(pc["flavor"]),
+				HORIZONTAL_ALIGNMENT_LEFT,
+				460,
+				14,
+				Color("#b89ad6")
+			)
+
+		draw_string(
+			ThemeDB.fallback_font,
+			Vector2(screen_size.x / 2.0 - 200.0, screen_size.y / 2.0 + 200.0),
+			"按键盘 1、2、3 或用鼠标点击选择",
+			HORIZONTAL_ALIGNMENT_CENTER,
+			400,
+			18,
+			Color("#ffd76e")
 		)
 
 	# 死亡界面
