@@ -41,7 +41,7 @@ const ENEMY_TYPES := {
 		"color": Color("#8c4a2f"),
 		"size": 52.0,
 		"speed": 45.0,
-		"max_hp": 260,
+		"max_hp": 180,
 		"damage": 16,
 		"reward": 25,
 	},
@@ -384,8 +384,52 @@ func choose_skill(index: int) -> void:
 
 
 # ==========================================
-# 键盘操作：升级选择、重开游戏
+# 键盘 / 鼠标操作：升级选择、重开游戏
 # ==========================================
+
+# 功法卡片的矩形范围（绘制和点击共用，避免两处坐标不一致）
+func get_skill_card_rect(index: int) -> Rect2:
+	var card_y := screen_size.y / 2.0 - 45.0 + float(index) * 66.0
+	return Rect2(
+		Vector2(screen_size.x / 2.0 - 200.0, card_y),
+		Vector2(400, 54)
+	)
+
+
+# 某个坐标点落在哪张卡片上，-1 表示没有
+func get_skill_index_at(pos: Vector2) -> int:
+	if not upgrade_pending:
+		return -1
+
+	for i in range(skill_choices.size()):
+		if get_skill_card_rect(i).has_point(pos):
+			return i
+
+	return -1
+
+
+# 鼠标当前悬停在哪张卡片上，-1 表示没有
+func get_hovered_skill_index() -> int:
+	if not upgrade_pending:
+		return -1
+
+	return get_skill_index_at(get_viewport().get_mouse_position())
+
+
+func _input(event: InputEvent) -> void:
+	# 鼠标点击选择功法（用事件自带坐标，比查询鼠标位置更可靠）
+	if event is InputEventMouseButton and event.pressed and event.button_index == MOUSE_BUTTON_LEFT:
+		if upgrade_pending:
+			var index := get_skill_index_at(event.position)
+			if index >= 0:
+				choose_skill(index)
+				get_viewport().set_input_as_handled()
+		return
+
+	# 鼠标移动时刷新悬停高亮
+	if event is InputEventMouseMotion and upgrade_pending:
+		queue_redraw()
+
 
 func _unhandled_input(event: InputEvent) -> void:
 	if event is InputEventKey and event.pressed and not event.echo:
@@ -606,14 +650,16 @@ func _draw() -> void:
 		)
 
 		for i in range(skill_choices.size()):
-			var card_y := screen_size.y / 2.0 - 45.0 + float(i) * 66.0
-			var card_rect := Rect2(
-				Vector2(screen_size.x / 2.0 - 200.0, card_y),
-				Vector2(400, 54)
-			)
+			var card_rect := get_skill_card_rect(i)
+			var hovered := (i == get_hovered_skill_index())
 
-			draw_rect(card_rect, Color("#294d48"))
-			draw_rect(card_rect, Color("#69d9c5"), false, 2.0)
+			# 悬停时卡片变亮、边框变金色
+			if hovered:
+				draw_rect(card_rect, Color("#3d6f68"))
+				draw_rect(card_rect, Color("#ffe9a6"), false, 3.0)
+			else:
+				draw_rect(card_rect, Color("#294d48"))
+				draw_rect(card_rect, Color("#69d9c5"), false, 2.0)
 
 			var skill: Dictionary = skill_choices[i]
 			var line_text := str(i + 1) + ". " + str(skill["name"]) + " — " + str(skill["description"])
@@ -625,15 +671,15 @@ func _draw() -> void:
 				HORIZONTAL_ALIGNMENT_LEFT,
 				370,
 				17,
-				Color.WHITE
+				Color("#fff7d6") if hovered else Color.WHITE
 			)
 
 		draw_string(
 			ThemeDB.fallback_font,
-			Vector2(screen_size.x / 2.0 - 140.0, screen_size.y / 2.0 + 185.0),
-			"按键盘 1、2 或 3 选择",
+			Vector2(screen_size.x / 2.0 - 180.0, screen_size.y / 2.0 + 185.0),
+			"按键盘 1、2、3 或用鼠标点击选择",
 			HORIZONTAL_ALIGNMENT_CENTER,
-			280,
+			360,
 			18,
 			Color("#ffe9a6")
 		)
