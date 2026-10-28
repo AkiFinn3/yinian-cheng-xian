@@ -22,7 +22,7 @@ const ENEMY_TYPES := {
 		"name": "妖狼",
 		"color": Color("#bd3e85"),
 		"size": 34.0,
-		"speed": 75.0,
+		"speed": 135.0,
 		"max_hp": 100,
 		"damage": 18,
 		"reward": 35,
@@ -31,7 +31,7 @@ const ENEMY_TYPES := {
 		"name": "疾风雀",
 		"color": Color("#d9a441"),
 		"size": 24.0,
-		"speed": 145.0,
+		"speed": 205.0,
 		"max_hp": 55,
 		"damage": 12,
 		"reward": 28,
@@ -40,7 +40,7 @@ const ENEMY_TYPES := {
 		"name": "岩甲兽",
 		"color": Color("#8c4a2f"),
 		"size": 52.0,
-		"speed": 45.0,
+		"speed": 95.0,
 		"max_hp": 180,
 		"damage": 32,
 		"reward": 90,
@@ -49,7 +49,7 @@ const ENEMY_TYPES := {
 		"name": "魔道老祖",
 		"color": Color("#c1121f"),
 		"size": 110.0,
-		"speed": 30.0,
+		"speed": 85.0,
 		"max_hp": 8000,
 		"damage": 60,
 		"reward": 1500,
@@ -407,6 +407,7 @@ var learned_skills: Array[String] = []
 # 游戏界面
 var screen_size: Vector2 = Vector2(960, 600)
 var camera_offset: Vector2 = Vector2.ZERO   # 世界坐标 → 屏幕坐标的偏移
+var ui_scale: float = 1.0                   # UI 缩放（小窗口自动缩小）
 var message_timer: float = 0.0
 var message_text: String = ""
 
@@ -437,6 +438,8 @@ func _ready() -> void:
 
 func _process(delta: float) -> void:
 	screen_size = get_viewport_rect().size
+	# UI 自适应：窗口小于 1100 宽时按比例缩小
+	ui_scale = clampf(screen_size.x / 1280.0, 0.65, 1.0)
 
 	if is_game_over:
 		queue_redraw()
@@ -955,11 +958,13 @@ func spawn_enemy(elite: bool = false) -> void:
 	var size: float = float(data["size"])
 	var reward: int = int(data["reward"])
 	var damage: int = int(data["damage"])
+	var speed: float = float(data["speed"])
 
-	# 随境界成长：血量 +35%/境，伤害 +25%/境
+	# 随境界成长：血量 +35%/境，伤害 +25%/境，移速 +12%/境
 	var progress := float(get_progress()) / 3.0
 	max_hp = int(float(max_hp) * (1.0 + progress * 0.35))
 	damage = int(float(damage) * (1.0 + progress * 0.25))
+	speed = float(data["speed"]) * (1.0 + progress * 0.12)
 
 	if elite:
 		max_hp = int(max_hp * ELITE_HP_MUL)
@@ -970,7 +975,7 @@ func spawn_enemy(elite: bool = false) -> void:
 	enemies.append({
 		"type": type_name,
 		"pos": pos,
-		"speed": float(data["speed"]),
+		"speed": speed,
 		"size": size,
 		"max_hp": max_hp,
 		"hp": max_hp,
@@ -1032,7 +1037,7 @@ func get_wave_progress() -> float:
 
 # 同屏上限：基础 5，随波次增长，封顶 12 只
 func get_max_enemies() -> int:
-	return mini(BASE_MAX_ENEMIES + (wave - 1) / 2, 12)
+	return mini(BASE_MAX_ENEMIES + (wave - 1) / 2, 25)
 
 
 # 补满到当前上限（首领战不补）
@@ -1477,22 +1482,26 @@ func choose_path(index: int) -> void:
 
 # 功法卡片的矩形范围（绘制和点击共用，避免两处坐标不一致）
 func get_skill_card_rect(index: int) -> Rect2:
-	var card_y := screen_size.y / 2.0 - 45.0 + float(index) * 66.0
+	var w := 400.0 * ui_scale
+	var h := 54.0 * ui_scale
+	var gap := 66.0 * ui_scale
+	var card_y := screen_size.y / 2.0 - 45.0 * ui_scale + float(index) * gap
 	return Rect2(
-		Vector2(screen_size.x / 2.0 - 200.0, card_y),
-		Vector2(400, 54)
+		Vector2(screen_size.x / 2.0 - w / 2.0, card_y),
+		Vector2(w, h)
 	)
 
 
 # 仙道卡片矩形（比功法卡片高，因为有道途说明）
 func get_path_card_rect(index: int) -> Rect2:
-	var card_h := 74.0
-	var gap := 8.0
+	var card_h := 74.0 * ui_scale
+	var gap := 8.0 * ui_scale
+	var w := 500.0 * ui_scale
 	var total := 3.0 * card_h + 2.0 * gap
-	var start_y := screen_size.y / 2.0 - total / 2.0 + 26.0
+	var start_y := screen_size.y / 2.0 - total / 2.0 + 26.0 * ui_scale
 	return Rect2(
-		Vector2(screen_size.x / 2.0 - 250.0, start_y + float(index) * (card_h + gap)),
-		Vector2(500, card_h)
+		Vector2(screen_size.x / 2.0 - w / 2.0, start_y + float(index) * (card_h + gap)),
+		Vector2(w, card_h)
 	)
 
 
