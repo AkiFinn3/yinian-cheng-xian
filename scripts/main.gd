@@ -47,6 +47,82 @@ const ENEMY_TYPES := {
 	},
 }
 
+# ==========================================
+# 境界体系（阶段 9）
+# 凡人六境，每境初期/中期/圆满；xp 是「升到下一小阶」所需修为
+# ==========================================
+const REALMS := [
+	{
+		"name": "炼己",
+		"xp": [24, 30, 38],
+		"skills": ["剑气诀", "护体灵气", "疾风步", "凝神"],
+	},
+	{
+		"name": "筑基",
+		"xp": [46, 56, 66],
+		"skills": ["御剑术", "金钟罩", "踏云步", "心眼"],
+	},
+	{
+		"name": "炼精化炁",
+		"xp": [78, 90, 104],
+		"skills": ["炁冲剑脉", "精元护体", "罡气行云", "目明"],
+	},
+	{
+		"name": "炼炁化神",
+		"xp": [118, 134, 152],
+		"skills": ["神识御剑", "炁墙", "缩地成寸", "神觉"],
+	},
+	{
+		"name": "炼神返虚",
+		"xp": [170, 190, 212],
+		"skills": ["虚空剑意", "返虚护体", "踏虚而行", "洞虚"],
+	},
+	{
+		"name": "炼虚合道",
+		"xp": [234, 258, 284],
+		"skills": ["大道剑诀", "合道金身", "逍遥游", "天眼"],
+	},
+]
+
+const STAGE_NAMES := ["初期", "中期", "圆满"]
+
+# ==========================================
+# 功法表
+# stat: sword / armor / speed / crit
+# ==========================================
+const SKILLS := {
+	# ---- 炼己 ----
+	"剑气诀":   {"desc": "剑气伤害 +8",   "stat": "sword", "value": 8},
+	"护体灵气": {"desc": "减伤 +4",       "stat": "armor", "value": 4},
+	"疾风步":   {"desc": "移速 +25",      "stat": "speed", "value": 25},
+	"凝神":     {"desc": "暴击率 +5%",    "stat": "crit",  "value": 5},
+	# ---- 筑基 ----
+	"御剑术":   {"desc": "剑气伤害 +18",  "stat": "sword", "value": 18},
+	"金钟罩":   {"desc": "减伤 +10",      "stat": "armor", "value": 10},
+	"踏云步":   {"desc": "移速 +45",      "stat": "speed", "value": 45},
+	"心眼":     {"desc": "暴击率 +10%",   "stat": "crit",  "value": 10},
+	# ---- 炼精化炁 ----
+	"炁冲剑脉": {"desc": "剑气伤害 +30",  "stat": "sword", "value": 30},
+	"精元护体": {"desc": "减伤 +16",      "stat": "armor", "value": 16},
+	"罡气行云": {"desc": "移速 +60",      "stat": "speed", "value": 60},
+	"目明":     {"desc": "暴击率 +14%",   "stat": "crit",  "value": 14},
+	# ---- 炼炁化神 ----
+	"神识御剑": {"desc": "剑气伤害 +45",  "stat": "sword", "value": 45},
+	"炁墙":     {"desc": "减伤 +24",      "stat": "armor", "value": 24},
+	"缩地成寸": {"desc": "移速 +90",      "stat": "speed", "value": 90},
+	"神觉":     {"desc": "暴击率 +20%",   "stat": "crit",  "value": 20},
+	# ---- 炼神返虚 ----
+	"虚空剑意": {"desc": "剑气伤害 +65",  "stat": "sword", "value": 65},
+	"返虚护体": {"desc": "减伤 +32",      "stat": "armor", "value": 32},
+	"踏虚而行": {"desc": "移速 +110",     "stat": "speed", "value": 110},
+	"洞虚":     {"desc": "暴击率 +26%",   "stat": "crit",  "value": 26},
+	# ---- 炼虚合道 ----
+	"大道剑诀": {"desc": "剑气伤害 +95",  "stat": "sword", "value": 95},
+	"合道金身": {"desc": "减伤 +42",      "stat": "armor", "value": 42},
+	"逍遥游":   {"desc": "移速 +150",     "stat": "speed", "value": 150},
+	"天眼":     {"desc": "暴击率 +34%",   "stat": "crit",  "value": 34},
+}
+
 # 妖兽属性（当前这一只，由 spawn_enemy 从数据表赋值）
 var enemy_type: String = "wolf"
 var enemy_pos: Vector2 = Vector2(500, 300)
@@ -72,17 +148,18 @@ var projectile_lifetimes: Array[float] = []
 var projectile_is_critical: Array[bool] = []
 var enemy_hit_flash: float = 0.0
 
-# 修为与升级
+# 修为与境界
 var kill_count: int = 0
 var cultivation: int = 0
-var level: int = 1
-var next_level_xp: int = 30
+var realm_index: int = 0        # 0=炼己 1=筑基 2=炼精化炁 3=炼炁化神 4=炼神返虚 5=炼虚合道
+var stage_index: int = 0        # 0=初期 1=中期 2=圆满
 var upgrade_pending: bool = false
 
 # 功法加成
 var sword_bonus: int = 0
 var armor_reduction: int = 0
 var speed_bonus: float = 0.0
+var crit_bonus: float = 0.0     # 暴击率加成（百分点，如 5 表示 +5%）
 
 # 三选一功法
 var skill_choices: Array[Dictionary] = []
@@ -203,7 +280,7 @@ func update_auto_attack() -> void:
 
 func fire_sword_energy(direction: Vector2) -> void:
 	var damage: int = attack_damage + sword_bonus
-	var is_critical: bool = randf() < 0.15
+	var is_critical: bool = randf() < (0.15 + crit_bonus / 100.0)
 
 	if is_critical:
 		damage *= 2
@@ -279,7 +356,8 @@ func kill_enemy() -> void:
 	message_text = "击败" + enemy_name + "！修为 +" + str(reward)
 	message_timer = 1.0
 
-	if cultivation >= next_level_xp:
+	if cultivation >= get_next_level_xp():
+		cultivation -= get_next_level_xp()
 		begin_upgrade()
 		return
 
@@ -288,7 +366,7 @@ func kill_enemy() -> void:
 
 # 按等级加权随机选择妖兽类型
 func pick_enemy_type() -> String:
-	var level_bonus: int = mini(level - 1, 6)
+	var level_bonus: int = mini(get_progress(), 6)
 
 	var golem_weight: int = mini(15 + level_bonus * 5, 45)
 	var bird_weight: int = mini(30 + level_bonus * 2, 40)
@@ -332,25 +410,54 @@ func spawn_enemy() -> void:
 # 升级与随机功法三选一
 # ==========================================
 
+# 当前境界名称，如「炼精化炁」
+func get_realm_name() -> String:
+	return str(REALMS[realm_index]["name"])
+
+
+# 当前小阶名称，如「中期」
+func get_stage_name() -> String:
+	return str(STAGE_NAMES[stage_index])
+
+
+# 完整境界，如「炼精化炁·中期」
+func get_full_realm_name() -> String:
+	return get_realm_name() + "·" + get_stage_name()
+
+
+# 升到下一小阶需要的修为
+func get_next_level_xp() -> int:
+	return int(REALMS[realm_index]["xp"][stage_index])
+
+
+# 总进度 0..17，用于妖兽难度
+func get_progress() -> int:
+	return realm_index * 3 + stage_index
+
+
+# 当前境界的功法池
+func get_current_skill_pool() -> Array:
+	return REALMS[realm_index]["skills"]
+
+
 func begin_upgrade() -> void:
 	upgrade_pending = true
 
-	skill_choices = [
-		{
-			"name": "剑气诀",
-			"description": "剑气伤害永久 +10"
-		},
-		{
-			"name": "护体灵气",
-			"description": "每次受到伤害减少 5"
-		},
-		{
-			"name": "疾风步",
-			"description": "移动速度永久 +35"
-		}
-	]
+	var pool: Array = get_current_skill_pool()
 
-	skill_choices.shuffle()
+	# 从本境界 4 种功法中随机取 3 种
+	var picked: Array = pool.duplicate()
+	picked.shuffle()
+
+	skill_choices = []
+
+	for i in range(mini(3, picked.size())):
+		var skill_name: String = str(picked[i])
+		var data: Dictionary = SKILLS[skill_name]
+		skill_choices.append({
+			"name": skill_name,
+			"description": str(data["desc"]),
+		})
 
 
 func choose_skill(index: int) -> void:
@@ -362,19 +469,33 @@ func choose_skill(index: int) -> void:
 
 	var chosen: Dictionary = skill_choices[index]
 	var skill_name: String = chosen["name"]
+	var data: Dictionary = SKILLS[skill_name]
 
-	match skill_name:
-		"剑气诀":
-			sword_bonus += 10
-		"护体灵气":
-			armor_reduction += 5
-		"疾风步":
-			speed_bonus += 35.0
+	# 统一按 stat 处理效果，加新功法只需在 SKILLS 里加一行
+	match str(data["stat"]):
+		"sword":
+			sword_bonus += int(data["value"])
+		"armor":
+			armor_reduction += int(data["value"])
+		"speed":
+			speed_bonus += float(data["value"])
+		"crit":
+			crit_bonus += float(data["value"])
 
 	learned_skills.append(skill_name)
 
-	level += 1
-	next_level_xp = level * 30
+	# 推进小境界
+	stage_index += 1
+
+	if stage_index >= STAGE_NAMES.size():
+		stage_index = 0
+		realm_index += 1
+
+		# 暂未实现仙道，先封顶在炼虚合道·圆满
+		if realm_index >= REALMS.size():
+			realm_index = REALMS.size() - 1
+			stage_index = STAGE_NAMES.size() - 1
+
 	upgrade_pending = false
 
 	message_text = "习得功法：" + skill_name
@@ -457,12 +578,13 @@ func restart_game() -> void:
 	enemy_hp = enemy_max_hp
 	kill_count = 0
 	cultivation = 0
-	level = 1
-	next_level_xp = 30
+	realm_index = 0
+	stage_index = 0
 
 	sword_bonus = 0
 	armor_reduction = 0
 	speed_bonus = 0.0
+	crit_bonus = 0.0
 
 	upgrade_pending = false
 	skill_choices.clear()
@@ -580,7 +702,7 @@ func _draw() -> void:
 	draw_string(
 		ThemeDB.fallback_font,
 		Vector2(20, 78),
-		"等级：" + str(level) + "   修为：" + str(cultivation) + " / " + str(next_level_xp),
+		"境界：" + get_full_realm_name() + "   修为：" + str(cultivation) + " / " + str(get_next_level_xp()),
 		HORIZONTAL_ALIGNMENT_LEFT,
 		-1,
 		18,
@@ -603,7 +725,8 @@ func _draw() -> void:
 		Vector2(20, 132),
 		"剑气 +" + str(sword_bonus)
 		+ "  减伤 " + str(armor_reduction)
-		+ "  移速 +" + str(int(speed_bonus)),
+		+ "  移速 +" + str(int(speed_bonus))
+		+ "  暴击 +" + str(int(crit_bonus)) + "%",
 		HORIZONTAL_ALIGNMENT_LEFT,
 		-1,
 		16,
@@ -642,10 +765,10 @@ func _draw() -> void:
 		draw_string(
 			ThemeDB.fallback_font,
 			Vector2(screen_size.x / 2.0 - 180.0, screen_size.y / 2.0 - 100.0),
-			"突破成功！选择一门功法",
+			"【" + get_full_realm_name() + "】选择一门功法",
 			HORIZONTAL_ALIGNMENT_CENTER,
 			360,
-			28,
+			26,
 			Color("#ffe9a6")
 		)
 
@@ -704,7 +827,7 @@ func _draw() -> void:
 		draw_string(
 			ThemeDB.fallback_font,
 			Vector2(screen_size.x / 2.0 - 180.0, screen_size.y / 2.0 + 15.0),
-			"击败妖兽：" + str(kill_count) + "   最终等级：" + str(level),
+			"击败妖兽：" + str(kill_count) + "   最终境界：" + get_full_realm_name(),
 			HORIZONTAL_ALIGNMENT_CENTER,
 			360,
 			20,
