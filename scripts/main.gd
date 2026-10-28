@@ -3,7 +3,7 @@ extends Node2D
 
 # ==========================================
 # 《一念成仙》Godot 4.7.2
-# 第六阶段：自动剑气弹幕
+# 第八阶段：多种妖兽（妖狼 / 疾风雀 / 岩甲兽）
 # ==========================================
 
 # 玩家属性
@@ -15,7 +15,40 @@ var player_hp: int = 100
 var damage_cooldown: float = 0.0
 var is_game_over: bool = false
 
-# 妖兽属性
+# 妖兽类型数据表（阶段 8）
+# size 是直径（不是半径）；speed 单位 px/s；damage 是接触伤害；reward 是击杀修为
+const ENEMY_TYPES := {
+	"wolf": {
+		"name": "妖狼",
+		"color": Color("#bd3e85"),
+		"size": 34.0,
+		"speed": 75.0,
+		"max_hp": 100,
+		"damage": 10,
+		"reward": 10,
+	},
+	"bird": {
+		"name": "疾风雀",
+		"color": Color("#d9a441"),
+		"size": 24.0,
+		"speed": 145.0,
+		"max_hp": 55,
+		"damage": 6,
+		"reward": 8,
+	},
+	"golem": {
+		"name": "岩甲兽",
+		"color": Color("#8c4a2f"),
+		"size": 52.0,
+		"speed": 45.0,
+		"max_hp": 260,
+		"damage": 16,
+		"reward": 25,
+	},
+}
+
+# 妖兽属性（当前这一只，由 spawn_enemy 从数据表赋值）
+var enemy_type: String = "wolf"
 var enemy_pos: Vector2 = Vector2(500, 300)
 var enemy_speed: float = 75.0
 var enemy_size: float = 34.0
@@ -134,7 +167,8 @@ func update_enemy(delta: float) -> void:
 	var contact_distance := (player_size + enemy_size) / 2.0
 
 	if distance < contact_distance and damage_cooldown <= 0.0:
-		var actual_damage := maxi(1, 10 - armor_reduction)
+		var enemy_damage: int = int(ENEMY_TYPES[enemy_type]["damage"])
+		var actual_damage := maxi(1, enemy_damage - armor_reduction)
 		player_hp -= actual_damage
 		damage_cooldown = 0.8
 
@@ -237,9 +271,12 @@ func update_projectiles(delta: float) -> void:
 
 func kill_enemy() -> void:
 	kill_count += 1
-	cultivation += 10
 
-	message_text = "击败妖兽！修为 +10"
+	var reward: int = int(ENEMY_TYPES[enemy_type]["reward"])
+	var enemy_name: String = str(ENEMY_TYPES[enemy_type]["name"])
+	cultivation += reward
+
+	message_text = "击败" + enemy_name + "！修为 +" + str(reward)
 	message_timer = 1.0
 
 	if cultivation >= next_level_xp:
@@ -249,7 +286,32 @@ func kill_enemy() -> void:
 	spawn_enemy()
 
 
+# 按等级加权随机选择妖兽类型
+func pick_enemy_type() -> String:
+	var level_bonus: int = mini(level - 1, 6)
+
+	var golem_weight: int = mini(15 + level_bonus * 5, 45)
+	var bird_weight: int = mini(30 + level_bonus * 2, 40)
+	var wolf_weight: int = maxi(100 - golem_weight - bird_weight, 10)
+
+	var total: int = golem_weight + bird_weight + wolf_weight
+	var roll: int = randi_range(1, total)
+
+	if roll <= wolf_weight:
+		return "wolf"
+	if roll <= wolf_weight + bird_weight:
+		return "bird"
+	return "golem"
+
+
 func spawn_enemy() -> void:
+	enemy_type = pick_enemy_type()
+
+	var data: Dictionary = ENEMY_TYPES[enemy_type]
+	enemy_speed = float(data["speed"])
+	enemy_size = float(data["size"])
+	enemy_max_hp = int(data["max_hp"])
+
 	var margin := 60.0
 	var side := randi_range(0, 3)
 
@@ -393,8 +455,8 @@ func _draw() -> void:
 			)
 
 	# 妖兽
-	# 妖兽：命中时短暂闪白
-	var enemy_color := Color("#bd3e85")
+	# 妖兽：命中时短暂闪白，按类型取颜色
+	var enemy_color: Color = ENEMY_TYPES[enemy_type]["color"]
 
 	if enemy_hit_flash > 0.0:
 		enemy_color = Color.WHITE
@@ -408,14 +470,25 @@ func _draw() -> void:
 	)
 
 	# 妖兽血条
-	var bar_width := 54.0
-	var bar_pos := enemy_pos + Vector2(-bar_width / 2.0, -enemy_size / 2.0 - 14.0)
+	var bar_width := maxf(54.0, enemy_size + 12.0)
+	var bar_pos := enemy_pos + Vector2(-bar_width / 2.0, -enemy_size / 2.0 - 20.0)
 	draw_rect(Rect2(bar_pos, Vector2(bar_width, 6)), Color("#421c31"))
 
 	var hp_ratio := float(enemy_hp) / float(enemy_max_hp)
 	draw_rect(
 		Rect2(bar_pos, Vector2(bar_width * hp_ratio, 6)),
 		Color("#f05276")
+	)
+
+	# 妖兽名字
+	draw_string(
+		ThemeDB.fallback_font,
+		enemy_pos + Vector2(-30.0, -enemy_size / 2.0 - 26.0),
+		str(ENEMY_TYPES[enemy_type]["name"]),
+		HORIZONTAL_ALIGNMENT_CENTER,
+		60,
+		14,
+		Color("#e8d8ff")
 	)
 
 	# 玩家
