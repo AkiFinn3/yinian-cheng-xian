@@ -406,6 +406,7 @@ var learned_skills: Array[String] = []
 
 # 游戏界面
 var screen_size: Vector2 = Vector2(960, 600)
+var camera_offset: Vector2 = Vector2.ZERO   # 世界坐标 → 屏幕坐标的偏移
 var message_timer: float = 0.0
 var message_text: String = ""
 
@@ -428,7 +429,8 @@ var pending_realm_advance: bool = false     # 劫难打赢后再推进境界
 func _ready() -> void:
 	randomize()
 	screen_size = get_viewport_rect().size
-	player_pos = screen_size / 2.0
+	player_pos = Vector2.ZERO
+	update_camera()
 	reset_enemies()
 	queue_redraw()
 
@@ -458,6 +460,7 @@ func _process(delta: float) -> void:
 	message_timer = maxf(0.0, message_timer - delta)
 
 	update_player(delta)
+	update_camera()
 	update_enemies(delta)
 	update_projectiles(delta)
 	update_orbs(delta)
@@ -469,6 +472,21 @@ func _process(delta: float) -> void:
 # ==========================================
 # 玩家移动
 # ==========================================
+
+# 摄像机跟随：玩家始终在屏幕中心
+func update_camera() -> void:
+	camera_offset = screen_size / 2.0 - player_pos
+
+
+# 世界坐标 → 屏幕坐标
+func w2s(p: Vector2) -> Vector2:
+	return p + camera_offset
+
+
+# 屏幕坐标 → 世界坐标
+func s2w(p: Vector2) -> Vector2:
+	return p - camera_offset
+
 
 func update_player(delta: float) -> void:
 	var direction := Vector2.ZERO
@@ -488,9 +506,7 @@ func update_player(delta: float) -> void:
 	var current_speed := player_speed + speed_bonus
 	player_pos += direction * current_speed * delta
 
-	var margin := player_size / 2.0
-	player_pos.x = clampf(player_pos.x, margin, screen_size.x - margin)
-	player_pos.y = clampf(player_pos.y, margin, screen_size.y - margin)
+	# 无限地图：不钳制边界，摄像机跟随
 
 
 # ==========================================
@@ -655,12 +671,8 @@ func update_projectiles(delta: float) -> void:
 			continue
 
 		var p := projectile_positions[i]
-		var outside_screen := (
-			p.x < -20.0
-			or p.x > screen_size.x + 20.0
-			or p.y < -20.0
-			or p.y > screen_size.y + 20.0
-		)
+		# 无限地图：超出视野较远才消失
+		var outside_screen := p.distance_to(player_pos) > maxf(screen_size.x, screen_size.y) * 1.2
 
 		if projectile_lifetimes[i] <= 0.0 or outside_screen:
 			projectile_positions.remove_at(i)
@@ -924,19 +936,10 @@ func spawn_enemy(elite: bool = false) -> void:
 	var type_name: String = pick_enemy_type()
 	var data: Dictionary = ENEMY_TYPES[type_name]
 
-	var margin := 60.0
-	var pos := Vector2.ZERO
-	var side := randi_range(0, 3)
-
-	match side:
-		0:
-			pos = Vector2(randf_range(margin, screen_size.x - margin), margin)
-		1:
-			pos = Vector2(randf_range(margin, screen_size.x - margin), screen_size.y - margin)
-		2:
-			pos = Vector2(margin, randf_range(margin, screen_size.y - margin))
-		3:
-			pos = Vector2(screen_size.x - margin, randf_range(margin, screen_size.y - margin))
+	# 无限地图：在玩家周围环形生成（视野外）
+	var angle := randf() * TAU
+	var radius := maxf(screen_size.x, screen_size.y) * 0.75 + randf_range(0.0, 150.0)
+	var pos: Vector2 = player_pos + Vector2(cos(angle), sin(angle)) * radius
 
 	var max_hp: int = int(data["max_hp"])
 	var size: float = float(data["size"])
@@ -989,7 +992,7 @@ func spawn_boss() -> void:
 
 	enemies.append({
 		"type": "boss",
-		"pos": Vector2(screen_size.x / 2.0, 120.0),
+		"pos": player_pos + Vector2(0, -260),
 		"speed": float(data["speed"]),
 		"size": float(data["size"]),
 		"max_hp": boss_hp,
@@ -1300,8 +1303,6 @@ func begin_tribulation() -> void:
 		var angle := TAU * float(i) / float(count) + randf() * 0.5
 		var dist := 260.0
 		var pos: Vector2 = player_pos + Vector2(cos(angle), sin(angle)) * dist
-		pos.x = clampf(pos.x, 60.0, screen_size.x - 60.0)
-		pos.y = clampf(pos.y, 60.0, screen_size.y - 60.0)
 
 		var hp := int(float(base["max_hp"]) * float(data["hp"]))
 
@@ -1632,7 +1633,8 @@ func _unhandled_input(event: InputEvent) -> void:
 func restart_game() -> void:
 	player_max_hp = 100
 	player_hp = player_max_hp
-	player_pos = screen_size / 2.0
+	player_pos = Vector2.ZERO
+	update_camera()
 	damage_cooldown = 0.0
 	is_game_over = false
 
@@ -1697,20 +1699,26 @@ func restart_game() -> void:
 # ==========================================
 
 func _draw() -> void:
-	# 秘境背景
+	# 秘境背景（铺满视口）
 	draw_rect(Rect2(Vector2.ZERO, screen_size), Color("#173d32"))
 
-	# 简单像素风地面纹理
-	for x in range(20, int(screen_size.x), 48):
-		for y in range(20, int(screen_size.y), 48):
-			draw_rect(
-				Rect2(Vector2(x,y), Vector2(2, 2)),
-				Color("#285344")
-			)
+	# 地面纹理：按世界坐标计算可视范围，无限滚动
+	var grid: float = 48.0
+	var start_x: float = floorf((player_pos.x - screen_size.x / 2.0) / grid) * grid
+	var start_y: float = floorf((player_pos.y - screen_size.y / 2.0) / grid) * grid
+
+	var gx := start_x
+	while gx < player_pos.x + screen_size.x / 2.0 + grid:
+		var gy := start_y
+		while gy < player_pos.y + screen_size.y / 2.0 + grid:
+			var sp := w2s(Vector2(gx + 20.0, gy + 20.0))
+			draw_rect(Rect2(sp, Vector2(2, 2)), Color("#285344"))
+			gy += grid
+		gx += grid
 
 	# 妖兽（遍历数组绘制每一只）
 	for e in enemies:
-		var pos: Vector2 = e["pos"]
+		var pos: Vector2 = w2s(e["pos"])
 		var size: float = float(e["size"])
 
 		var enemy_color: Color = ENEMY_TYPES[e["type"]]["color"]
@@ -1751,7 +1759,7 @@ func _draw() -> void:
 
 	# 修为晶石
 	for o in orbs:
-		var op: Vector2 = o["pos"]
+		var op: Vector2 = w2s(o["pos"])
 		var val := int(o["value"])
 
 		# 数值越大越亮、越大
@@ -1776,22 +1784,27 @@ func _draw() -> void:
 	if damage_cooldown > 0.0:
 		player_color = Color("#ffffff")
 
+	var psp := w2s(player_pos)
 	draw_rect(
-		Rect2(
-			player_pos - Vector2.ONE * player_size / 2.0,
-			Vector2.ONE * player_size
-		),
+		Rect2(psp - Vector2.ONE * player_size / 2.0, Vector2.ONE * player_size),
 		player_color
 	)
 
 	# 剑气弹幕
 	for i in range(projectile_positions.size()):
-		var p: Vector2 = projectile_positions[i]
+		var p: Vector2 = w2s(projectile_positions[i])
 		var d: Vector2 = projectile_directions[i]
 		var tail := p - d * 18.0
 		var tip := p + d * 7.0
 
-		draw_line(tail, tip, Color("#42f5ff"), 5.0, true)
+		var elem := "none"
+		if i < projectile_elements.size():
+			elem = projectile_elements[i]
+		var pcolor := Color("#42f5ff")
+		if ELEMENTS.has(elem):
+			pcolor = Color(str(ELEMENTS[elem]["color"]))
+
+		draw_line(tail, tip, pcolor, 5.0, true)
 		draw_circle(p, projectile_size, Color("#d5ffff"))
 
 	# 玩家生命条
