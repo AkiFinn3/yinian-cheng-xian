@@ -163,13 +163,10 @@ const SKILLS := {
 	"天眼":       {"desc": "暴击率 +54%",    "stat": "crit",  "value": 54},
 }
 
-# 妖兽属性（当前这一只，由 spawn_enemy 从数据表赋值）
-var enemy_type: String = "wolf"
-var enemy_pos: Vector2 = Vector2(500, 300)
-var enemy_speed: float = 75.0
-var enemy_size: float = 34.0
-var enemy_max_hp: int = 100
-var enemy_hp: int = 100
+# 妖兽数组（阶段 9：同屏多只）
+# 每只妖兽是一个 Dictionary：type/pos/speed/size/max_hp/hp/hit_flash
+const MAX_ENEMIES := 5
+var enemies: Array[Dictionary] = []
 
 # 自动攻击属性
 var attack_range: float = 420.0
@@ -186,7 +183,6 @@ var projectile_directions: Array[Vector2] = []
 var projectile_damages: Array[int] = []
 var projectile_lifetimes: Array[float] = []
 var projectile_is_critical: Array[bool] = []
-var enemy_hit_flash: float = 0.0
 
 # 修为与境界
 var kill_count: int = 0
@@ -215,7 +211,7 @@ func _ready() -> void:
 	randomize()
 	screen_size = get_viewport_rect().size
 	player_pos = screen_size / 2.0
-	spawn_enemy()
+	reset_enemies()
 	queue_redraw()
 
 
@@ -231,12 +227,13 @@ func _process(delta: float) -> void:
 		return
 
 	damage_cooldown = maxf(0.0, damage_cooldown - delta)
-	enemy_hit_flash = maxf(0.0, enemy_hit_flash - delta)
+	for e in enemies:
+		e["hit_flash"] = maxf(0.0, float(e["hit_flash"]) - delta)
 	attack_cooldown = maxf(0.0, attack_cooldown - delta)
 	message_timer = maxf(0.0, message_timer - delta)
 
 	update_player(delta)
-	update_enemy(delta)
+	update_enemies(delta)
 	update_projectiles(delta)
 	update_auto_attack()
 
@@ -274,27 +271,28 @@ func update_player(delta: float) -> void:
 # 妖兽移动与接触伤害
 # ==========================================
 
-func update_enemy(delta: float) -> void:
-	var direction := player_pos - enemy_pos
-	var distance := direction.length()
+func update_enemies(delta: float) -> void:
+	for e in enemies:
+		var direction: Vector2 = player_pos - e["pos"]
+		var distance := direction.length()
 
-	if distance > 0.001:
-		enemy_pos += direction.normalized() * enemy_speed * delta
+		if distance > 0.001:
+			e["pos"] = e["pos"] + direction.normalized() * float(e["speed"]) * delta
 
-	var contact_distance := (player_size + enemy_size) / 2.0
+		var contact_distance := (player_size + float(e["size"])) / 2.0
 
-	if distance < contact_distance and damage_cooldown <= 0.0:
-		var enemy_damage: int = int(ENEMY_TYPES[enemy_type]["damage"])
-		var actual_damage := maxi(1, enemy_damage - armor_reduction)
-		player_hp -= actual_damage
-		damage_cooldown = 0.8
+		if distance < contact_distance and damage_cooldown <= 0.0:
+			var enemy_damage: int = int(ENEMY_TYPES[e["type"]]["damage"])
+			var actual_damage := maxi(1, enemy_damage - armor_reduction)
+			player_hp -= actual_damage
+			damage_cooldown = 0.8
 
-		message_text = "受到伤害 -" + str(actual_damage)
-		message_timer = 0.5
+			message_text = "受到伤害 -" + str(actual_damage)
+			message_timer = 0.5
 
-		if player_hp <= 0:
-			player_hp = 0
-			is_game_over = true
+			if player_hp <= 0:
+				player_hp = 0
+				is_game_over = true
 
 
 # ==========================================
@@ -305,13 +303,22 @@ func update_auto_attack() -> void:
 	if attack_cooldown > 0.0:
 		return
 
-	var direction := enemy_pos - player_pos
-	var distance := direction.length()
+	# 锁定射程内最近的妖兽
+	var target: Dictionary = {}
+	var best_distance := attack_range
 
-	if distance > attack_range:
+	for e in enemies:
+		var d: float = (e["pos"] as Vector2).distance_to(player_pos)
+		if d < best_distance:
+			best_distance = d
+			target = e
+
+	if target.is_empty():
 		return
 
-	if distance <= 0.001:
+	var direction: Vector2 = (target["pos"] as Vector2) - player_pos
+
+	if direction.length() <= 0.001:
 		return
 
 	fire_sword_energy(direction.normalized())
@@ -340,14 +347,26 @@ func update_projectiles(delta: float) -> void:
 		projectile_positions[i] += projectile_directions[i] * projectile_speed * delta
 		projectile_lifetimes[i] -= delta
 
-		var hit_distance := (enemy_size / 2.0) + projectile_size
+		# 找被这一发剑气命中的妖兽（取最近的一只）
+		var hit_index := -1
+		var hit_distance_best := 1e20
 
-		if projectile_positions[i].distance_to(enemy_pos) <= hit_distance:
+		for j in range(enemies.size()):
+			var e: Dictionary = enemies[j]
+			var reach: float = (float(e["size"]) / 2.0) + projectile_size
+			var d: float = projectile_positions[i].distance_to(e["pos"])
+
+			if d <= reach and d < hit_distance_best:
+				hit_distance_best = d
+				hit_index = j
+
+		if hit_index >= 0:
+			var e: Dictionary = enemies[hit_index]
 			var damage: int = projectile_damages[i]
 			var is_critical: bool = projectile_is_critical[i]
 
-			enemy_hp -= damage
-			enemy_hit_flash = 0.12
+			e["hp"] = int(e["hp"]) - damage
+			e["hit_flash"] = 0.12
 
 			if is_critical:
 				message_text = "暴击！伤害 -" + str(damage)
@@ -362,8 +381,8 @@ func update_projectiles(delta: float) -> void:
 			projectile_lifetimes.remove_at(i)
 			projectile_is_critical.remove_at(i)
 
-			if enemy_hp <= 0:
-				kill_enemy()
+			if int(e["hp"]) <= 0:
+				kill_enemy(hit_index)
 
 			continue
 
@@ -386,11 +405,16 @@ func update_projectiles(delta: float) -> void:
 # 妖兽死亡、修为奖励与重生
 # ==========================================
 
-func kill_enemy() -> void:
-	kill_count += 1
+func kill_enemy(index: int) -> void:
+	if index < 0 or index >= enemies.size():
+		return
 
-	var reward: int = int(ENEMY_TYPES[enemy_type]["reward"])
-	var enemy_name: String = str(ENEMY_TYPES[enemy_type]["name"])
+	var e: Dictionary = enemies[index]
+	var reward: int = int(ENEMY_TYPES[e["type"]]["reward"])
+	var enemy_name: String = str(ENEMY_TYPES[e["type"]]["name"])
+
+	enemies.remove_at(index)
+	kill_count += 1
 	cultivation += reward
 
 	message_text = "击败" + enemy_name + "！修为 +" + str(reward)
@@ -399,7 +423,7 @@ func kill_enemy() -> void:
 	# 已封顶：修为停在阈值，不再触发升级
 	if is_max_realm():
 		cultivation = mini(cultivation, get_next_level_xp())
-		spawn_enemy()
+		refill_enemies()
 		return
 
 	if cultivation >= get_next_level_xp():
@@ -407,7 +431,7 @@ func kill_enemy() -> void:
 		begin_upgrade()
 		return
 
-	spawn_enemy()
+	refill_enemies()
 
 
 # 按等级加权随机选择妖兽类型
@@ -428,28 +452,46 @@ func pick_enemy_type() -> String:
 	return "golem"
 
 
+# 生成一只妖兽并加入数组
 func spawn_enemy() -> void:
-	enemy_type = pick_enemy_type()
-
-	var data: Dictionary = ENEMY_TYPES[enemy_type]
-	enemy_speed = float(data["speed"])
-	enemy_size = float(data["size"])
-	enemy_max_hp = int(data["max_hp"])
+	var type_name: String = pick_enemy_type()
+	var data: Dictionary = ENEMY_TYPES[type_name]
 
 	var margin := 60.0
+	var pos := Vector2.ZERO
 	var side := randi_range(0, 3)
 
 	match side:
 		0:
-			enemy_pos = Vector2(randf_range(margin, screen_size.x - margin), margin)
+			pos = Vector2(randf_range(margin, screen_size.x - margin), margin)
 		1:
-			enemy_pos = Vector2(randf_range(margin, screen_size.x - margin), screen_size.y - margin)
+			pos = Vector2(randf_range(margin, screen_size.x - margin), screen_size.y - margin)
 		2:
-			enemy_pos = Vector2(margin, randf_range(margin, screen_size.y - margin))
+			pos = Vector2(margin, randf_range(margin, screen_size.y - margin))
 		3:
-			enemy_pos = Vector2(screen_size.x - margin, randf_range(margin, screen_size.y - margin))
+			pos = Vector2(screen_size.x - margin, randf_range(margin, screen_size.y - margin))
 
-	enemy_hp = enemy_max_hp
+	enemies.append({
+		"type": type_name,
+		"pos": pos,
+		"speed": float(data["speed"]),
+		"size": float(data["size"]),
+		"max_hp": int(data["max_hp"]),
+		"hp": int(data["max_hp"]),
+		"hit_flash": 0.0,
+	})
+
+
+# 补满到 MAX_ENEMIES 只
+func refill_enemies() -> void:
+	while enemies.size() < MAX_ENEMIES:
+		spawn_enemy()
+
+
+# 清空并重新铺满（重开 / 升级后）
+func reset_enemies() -> void:
+	enemies.clear()
+	refill_enemies()
 
 
 # ==========================================
@@ -558,7 +600,7 @@ func choose_skill(index: int) -> void:
 		begin_upgrade()
 		return
 
-	spawn_enemy()
+	refill_enemies()
 
 
 # ==========================================
@@ -632,7 +674,6 @@ func restart_game() -> void:
 	damage_cooldown = 0.0
 	is_game_over = false
 
-	enemy_hp = enemy_max_hp
 	kill_count = 0
 	cultivation = 0
 	realm_index = 0
@@ -652,13 +693,12 @@ func restart_game() -> void:
 	projectile_damages.clear()
 	projectile_lifetimes.clear()
 	projectile_is_critical.clear()
-	enemy_hit_flash = 0.0
 
 	attack_cooldown = 0.0
 	message_timer = 0.0
 	message_text = ""
 
-	spawn_enemy()
+	reset_enemies()
 
 
 # ==========================================
@@ -677,42 +717,42 @@ func _draw() -> void:
 				Color("#285344")
 			)
 
-	# 妖兽
-	# 妖兽：命中时短暂闪白，按类型取颜色
-	var enemy_color: Color = ENEMY_TYPES[enemy_type]["color"]
+	# 妖兽（遍历数组绘制每一只）
+	for e in enemies:
+		var pos: Vector2 = e["pos"]
+		var size: float = float(e["size"])
 
-	if enemy_hit_flash > 0.0:
-		enemy_color = Color.WHITE
+		var enemy_color: Color = ENEMY_TYPES[e["type"]]["color"]
 
-	draw_rect(
-		Rect2(
-			enemy_pos - Vector2.ONE * enemy_size / 2.0,
-			Vector2.ONE * enemy_size
-		),
-		enemy_color
-	)
+		if float(e["hit_flash"]) > 0.0:
+			enemy_color = Color.WHITE
 
-	# 妖兽血条
-	var bar_width := maxf(54.0, enemy_size + 12.0)
-	var bar_pos := enemy_pos + Vector2(-bar_width / 2.0, -enemy_size / 2.0 - 20.0)
-	draw_rect(Rect2(bar_pos, Vector2(bar_width, 6)), Color("#421c31"))
+		draw_rect(
+			Rect2(pos - Vector2.ONE * size / 2.0, Vector2.ONE * size),
+			enemy_color
+		)
 
-	var hp_ratio := float(enemy_hp) / float(enemy_max_hp)
-	draw_rect(
-		Rect2(bar_pos, Vector2(bar_width * hp_ratio, 6)),
-		Color("#f05276")
-	)
+		# 血条
+		var bar_width := maxf(54.0, size + 12.0)
+		var bar_pos := pos + Vector2(-bar_width / 2.0, -size / 2.0 - 20.0)
+		draw_rect(Rect2(bar_pos, Vector2(bar_width, 6)), Color("#421c31"))
 
-	# 妖兽名字
-	draw_string(
-		ThemeDB.fallback_font,
-		enemy_pos + Vector2(-30.0, -enemy_size / 2.0 - 26.0),
-		str(ENEMY_TYPES[enemy_type]["name"]),
-		HORIZONTAL_ALIGNMENT_CENTER,
-		60,
-		14,
-		Color("#e8d8ff")
-	)
+		var hp_ratio := float(e["hp"]) / float(e["max_hp"])
+		draw_rect(
+			Rect2(bar_pos, Vector2(bar_width * hp_ratio, 6)),
+			Color("#f05276")
+		)
+
+		# 名字
+		draw_string(
+			ThemeDB.fallback_font,
+			pos + Vector2(-30.0, -size / 2.0 - 26.0),
+			str(ENEMY_TYPES[e["type"]]["name"]),
+			HORIZONTAL_ALIGNMENT_CENTER,
+			60,
+			14,
+			Color("#e8d8ff")
+		)
 
 	# 玩家
 	var player_color := Color("#45e5df")
