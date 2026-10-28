@@ -98,8 +98,8 @@ const TRIBULATION_REWARDS := [
 # ==========================================
 # 关卡流程（阶段 10）：5 波 + 首领
 # ==========================================
-const WAVE_TARGETS := [8, 10, 12, 14, 16, 18, 20, 22, 24, 26, 28, 30, 32, 34, 36, 38]
-const MAX_WAVES := 16
+# 波次仅作记录（每波击杀数），不限制进度、不触发首领
+const WAVE_KILLS_PER_WAVE := 20
 const ELITE_HP_MUL := 1.6
 const ELITE_DMG_MUL := 1.4
 const ELITE_SIZE_MUL := 1.25
@@ -112,52 +112,52 @@ const ELITE_REWARD_MUL := 2
 const REALMS := [
 	{
 		"name": "炼己",
-		"xp": [210, 245, 280],
+		"xp": [105, 140, 140],
 		"skills": ["剑气诀", "护体灵气", "疾风步", "凝神", "吐纳诀", "养气术", "快剑式", "远击诀"],
 	},
 	{
 		"name": "筑基",
-		"xp": [315, 350, 385],
+		"xp": [140, 175, 210],
 		"skills": ["御剑术", "金钟罩", "踏云步", "心眼", "周天功", "固元术", "流云剑", "穿云式"],
 	},
 	{
 		"name": "炼精",
-		"xp": [420, 455, 490],
+		"xp": [210, 245, 245],
 		"skills": ["精元剑气", "精血护体", "精行步", "精觉", "精元回春", "精血凝体", "精微剑", "精远击"],
 	},
 	{
 		"name": "化炁",
-		"xp": [525, 560, 595],
+		"xp": [245, 280, 315],
 		"skills": ["炁冲剑脉", "炁盾", "罡气行云", "炁感", "炁养周天", "炁凝真身", "炁疾剑", "炁破长空", "烈焰剑气"],
 	},
 	{
 		"name": "炼炁",
-		"xp": [630, 665, 700],
+		"xp": [315, 350, 350],
 		"skills": ["炁御剑", "炁墙", "缩地成寸", "炁视", "炼炁化生", "炼炁铸体", "炼炁快剑", "炼炁远击", "寒冰剑气"],
 	},
 	{
 		"name": "化神",
-		"xp": [735, 770, 805],
+		"xp": [350, 385, 420],
 		"skills": ["神识御剑", "神念护体", "神行术", "神觉", "神元回春", "神元凝体", "神速剑", "神识远照", "雷霆剑气"],
 	},
 	{
 		"name": "炼神",
-		"xp": [840, 875, 910],
+		"xp": [420, 455, 455],
 		"skills": ["炼神剑意", "神元护体", "踏虚而行", "洞神", "炼神养元", "炼神固本", "炼神快剑", "炼神远击", "罡风剑气"],
 	},
 	{
 		"name": "返虚",
-		"xp": [945, 980, 1015],
+		"xp": [455, 490, 525],
 		"skills": ["虚空剑意", "返虚护体", "返虚游", "洞虚", "返虚化生", "返虚凝体", "返虚快剑", "返虚远游", "烈焰剑气"],
 	},
 	{
 		"name": "炼虚",
-		"xp": [1050, 1085, 1120],
+		"xp": [525, 560, 560],
 		"skills": ["虚剑破空", "虚元金身", "逍遥游", "虚瞳", "炼虚长生", "炼虚铸体", "炼虚快剑", "炼虚远击", "寒冰剑气"],
 	},
 	{
 		"name": "合道",
-		"xp": [1190, 1260, 1330],
+		"xp": [630, 665, 700],
 		"skills": ["大道剑诀", "合道金身", "天地同游", "天眼", "合道长生", "合道真身", "合道快剑", "合道无疆", "雷霆剑气"],
 	},
 ]
@@ -302,7 +302,7 @@ const IMMORTAL_PATHS := {
 }
 
 # 仙阶修为需求：[仙道→神仙, 神仙→天仙]
-const IMMORTAL_XP := [700, 900]
+const IMMORTAL_XP := [450, 550]
 
 # 各仙阶可选的功法
 const IMMORTAL_SKILLS := {
@@ -812,17 +812,19 @@ func kill_enemy(index: int) -> void:
 	message_text = ("精英·" if is_elite else "") + "击败" + enemy_name + "！修为掉落 " + str(reward)
 	message_timer = 1.0
 
-	# 波次推进
+	# 波次仅作记录：累计击杀数，满 20 只记一波
 	wave_kills += 1
+	if wave_kills >= WAVE_KILLS_PER_WAVE:
+		wave_kills = 0
+		wave += 1
+		message_text = "第 " + str(wave) + " 波"
+		message_timer = 1.5
 
 	# 劫难战：全部清完则结算
 	if tribulation_pending:
 		if enemies.is_empty():
 			finish_tribulation()
 		return
-
-	if wave_kills >= int(WAVE_TARGETS[mini(wave - 1, MAX_WAVES - 1)]):
-		advance_wave()
 
 	# 仙道选择界面：不补怪
 	if path_choice_pending:
@@ -896,6 +898,7 @@ func spawn_enemy(elite: bool = false) -> void:
 
 
 # 生成首领（单独一只，不补普通妖兽）
+# 飞升试炼：达到天仙后自动触发（原由波次触发）
 func spawn_boss() -> void:
 	var data: Dictionary = ENEMY_TYPES["boss"]
 	enemies.clear()
@@ -914,43 +917,19 @@ func spawn_boss() -> void:
 	boss_active = true
 
 
-# 波次推进
-func advance_wave() -> void:
-	wave_kills = 0
-	wave += 1
-
-	if wave > MAX_WAVES:
-		# 5 波打完 → 首领战
-		wave = MAX_WAVES + 1
-		message_text = "魔道老祖现世！"
-		message_timer = 3.0
-		spawn_boss()
-		return
-
-	message_text = "第 " + str(wave) + " 波来袭！"
-	message_timer = 2.0
-	# 不清场！保留场上妖兽，只补到新的上限
-	refill_enemies()
-
-
-# 当前波次名称
+# 当前波次名称（仅记录）
 func get_wave_name() -> String:
-	if boss_active or wave > MAX_WAVES:
-		return "首领战"
-	return "第 " + str(wave) + " / " + str(MAX_WAVES) + " 波"
+	return "第 " + str(wave) + " 波"
 
 
-# 本波进度（0.0 ~ 1.0）
+# 本波进度（0.0 ~ 1.0，仅记录）
 func get_wave_progress() -> float:
-	if boss_active or wave > MAX_WAVES:
-		return 1.0
-	var target: int = int(WAVE_TARGETS[mini(wave - 1, MAX_WAVES - 1)])
-	return clampf(float(wave_kills) / float(target), 0.0, 1.0)
+	return clampf(float(wave_kills) / float(WAVE_KILLS_PER_WAVE), 0.0, 1.0)
 
 
-# 同屏上限：基础 5，随波次增长（第 12 波 11 只）
+# 同屏上限：基础 5，随波次增长，封顶 12 只
 func get_max_enemies() -> int:
-	return BASE_MAX_ENEMIES + (wave - 1) / 2
+	return mini(BASE_MAX_ENEMIES + (wave - 1) / 2, 12)
 
 
 # 补满到当前上限（首领战不补）
@@ -1237,6 +1216,12 @@ func advance_realm() -> void:
 	# 仙阶：神仙 → 天仙 → 封顶
 	if immortal_stage >= 1:
 		immortal_stage = mini(immortal_stage + 1, 3)
+
+		# 达到天仙 → 飞升试炼（首领战）
+		if immortal_stage >= 3:
+			message_text = "天仙已成！魔道老祖现世，破之则飞升！"
+			message_timer = 3.0
+			spawn_boss()
 		return
 
 	stage_index += 1
