@@ -408,6 +408,7 @@ var learned_skills: Array[String] = []
 var screen_size: Vector2 = Vector2(960, 600)
 var camera_offset: Vector2 = Vector2.ZERO   # 世界坐标 → 屏幕坐标的偏移
 var ui_scale: float = 1.0                   # UI 缩放（小窗口自动缩小）
+var distance_traveled: float = 0.0          # 累计移动距离（无限地图：走得越远怪越多）
 var message_timer: float = 0.0
 var message_text: String = ""
 
@@ -507,9 +508,11 @@ func update_player(delta: float) -> void:
 		direction = direction.normalized()
 
 	var current_speed := player_speed + speed_bonus
-	player_pos += direction * current_speed * delta
+	var move_vec := direction * current_speed * delta
+	player_pos += move_vec
 
-	# 无限地图：不钳制边界，摄像机跟随
+	# 无限地图：累计移动距离，用于提升同屏妖兽数量
+	distance_traveled += move_vec.length()
 
 
 # ==========================================
@@ -1036,8 +1039,12 @@ func get_wave_progress() -> float:
 
 
 # 同屏上限：基础 5，随波次增长，封顶 12 只
+# 同屏上限 = 基础 + 波次成长 + 移动距离成长，封顶 30
+# 每移动 2000px 多 1 只，最多贡献 +8 只
 func get_max_enemies() -> int:
-	return mini(BASE_MAX_ENEMIES + (wave - 1) / 2, 25)
+	var wave_bonus := (wave - 1) / 2
+	var explore_bonus := mini(int(distance_traveled / 2000.0), 8)
+	return mini(BASE_MAX_ENEMIES + wave_bonus + explore_bonus, 30)
 
 
 # 补满到当前上限（首领战不补）
@@ -1669,6 +1676,8 @@ func restart_game() -> void:
 	run_time = 0.0
 	game_won = false
 	boss_active = false
+
+	distance_traveled = 0.0
 
 	artifacts.clear()
 	artifact_drop_pending = false
