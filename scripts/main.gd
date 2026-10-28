@@ -45,7 +45,26 @@ const ENEMY_TYPES := {
 		"damage": 16,
 		"reward": 25,
 	},
+	"boss": {
+		"name": "魔道老祖",
+		"color": Color("#c1121f"),
+		"size": 110.0,
+		"speed": 30.0,
+		"max_hp": 3000,
+		"damage": 30,
+		"reward": 200,
+	},
 }
+
+# ==========================================
+# 关卡流程（阶段 10）：5 波 + 首领
+# ==========================================
+const WAVE_TARGETS := [8, 12, 16, 20, 24]
+const MAX_WAVES := 5
+const ELITE_HP_MUL := 1.6
+const ELITE_DMG_MUL := 1.4
+const ELITE_SIZE_MUL := 1.25
+const ELITE_REWARD_MUL := 2
 
 # ==========================================
 # 境界体系（阶段 9）
@@ -256,6 +275,13 @@ var screen_size: Vector2 = Vector2(960, 600)
 var message_timer: float = 0.0
 var message_text: String = ""
 
+# 关卡流程（阶段 10）
+var wave: int = 1                 # 1..5，6=首领战
+var wave_kills: int = 0
+var run_time: float = 0.0
+var game_won: bool = false
+var boss_active: bool = false
+
 
 func _ready() -> void:
 	randomize()
@@ -275,6 +301,8 @@ func _process(delta: float) -> void:
 	if upgrade_pending or path_choice_pending:
 		queue_redraw()
 		return
+
+	run_time += delta
 
 	damage_cooldown = maxf(0.0, damage_cooldown - delta)
 	for e in enemies:
@@ -332,7 +360,7 @@ func update_enemies(delta: float) -> void:
 		var contact_distance := (player_size + float(e["size"])) / 2.0
 
 		if distance < contact_distance and damage_cooldown <= 0.0:
-			var enemy_damage: int = int(ENEMY_TYPES[e["type"]]["damage"])
+			var enemy_damage: int = int(e.get("damage", ENEMY_TYPES[e["type"]]["damage"]))
 			var actual_damage := maxi(1, enemy_damage - armor_reduction)
 			player_hp -= actual_damage
 			damage_cooldown = 0.8
@@ -460,15 +488,31 @@ func kill_enemy(index: int) -> void:
 		return
 
 	var e: Dictionary = enemies[index]
-	var reward: int = int(ENEMY_TYPES[e["type"]]["reward"])
+	var reward: int = int(e.get("reward", ENEMY_TYPES[e["type"]]["reward"]))
 	var enemy_name: String = str(ENEMY_TYPES[e["type"]]["name"])
+	var is_elite: bool = bool(e.get("elite", false))
+	var is_boss: bool = (str(e["type"]) == "boss")
 
 	enemies.remove_at(index)
 	kill_count += 1
 	cultivation += reward
 
-	message_text = "击败" + enemy_name + "！修为 +" + str(reward)
+	if is_boss:
+		message_text = "★ 击败 " + enemy_name + "！"
+		message_timer = 3.0
+		boss_active = false
+		game_won = true
+		is_game_over = true
+		return
+
+	message_text = ("精英·" if is_elite else "") + "击败" + enemy_name + "！修为 +" + str(reward)
 	message_timer = 1.0
+
+	# 波次推进
+	wave_kills += 1
+
+	if wave_kills >= int(WAVE_TARGETS[mini(wave - 1, MAX_WAVES - 1)]):
+		advance_wave()
 
 	# 仙道选择界面：不补怪
 	if path_choice_pending:
@@ -507,7 +551,8 @@ func pick_enemy_type() -> String:
 
 
 # 生成一只妖兽并加入数组
-func spawn_enemy() -> void:
+# elite: 精英（波次 3/5 出现，血厚伤高奖励翻倍）
+func spawn_enemy(elite: bool = false) -> void:
 	var type_name: String = pick_enemy_type()
 	var data: Dictionary = ENEMY_TYPES[type_name]
 
@@ -525,21 +570,93 @@ func spawn_enemy() -> void:
 		3:
 			pos = Vector2(screen_size.x - margin, randf_range(margin, screen_size.y - margin))
 
+	var max_hp: int = int(data["max_hp"])
+	var size: float = float(data["size"])
+	var reward: int = int(data["reward"])
+	var damage: int = int(data["damage"])
+
+	if elite:
+		max_hp = int(max_hp * ELITE_HP_MUL)
+		size *= ELITE_SIZE_MUL
+		reward = int(reward * ELITE_REWARD_MUL)
+		damage = int(damage * ELITE_DMG_MUL)
+
 	enemies.append({
 		"type": type_name,
 		"pos": pos,
+		"speed": float(data["speed"]),
+		"size": size,
+		"max_hp": max_hp,
+		"hp": max_hp,
+		"hit_flash": 0.0,
+		"elite": elite,
+		"damage": damage,
+		"reward": reward,
+	})
+
+
+# 生成首领（单独一只，不补普通妖兽）
+func spawn_boss() -> void:
+	var data: Dictionary = ENEMY_TYPES["boss"]
+	enemies.clear()
+	enemies.append({
+		"type": "boss",
+		"pos": Vector2(screen_size.x / 2.0, 120.0),
 		"speed": float(data["speed"]),
 		"size": float(data["size"]),
 		"max_hp": int(data["max_hp"]),
 		"hp": int(data["max_hp"]),
 		"hit_flash": 0.0,
+		"elite": false,
+		"damage": int(data["damage"]),
+		"reward": int(data["reward"]),
 	})
+	boss_active = true
 
 
-# 补满到 MAX_ENEMIES 只
+# 波次推进
+func advance_wave() -> void:
+	wave_kills = 0
+	wave += 1
+
+	if wave > MAX_WAVES:
+		# 5 波打完 → 首领战
+		wave = MAX_WAVES + 1
+		message_text = "魔道老祖现世！"
+		message_timer = 3.0
+		spawn_boss()
+		return
+
+	message_text = "第 " + str(wave) + " 波来袭！"
+	message_timer = 2.0
+	reset_enemies()
+
+
+# 当前波次名称
+func get_wave_name() -> String:
+	if boss_active or wave > MAX_WAVES:
+		return "首领战"
+	return "第 " + str(wave) + " / " + str(MAX_WAVES) + " 波"
+
+
+# 本波进度（0.0 ~ 1.0）
+func get_wave_progress() -> float:
+	if boss_active or wave > MAX_WAVES:
+		return 1.0
+	var target: int = int(WAVE_TARGETS[mini(wave - 1, MAX_WAVES - 1)])
+	return clampf(float(wave_kills) / float(target), 0.0, 1.0)
+
+
+# 补满到 MAX_ENEMIES 只（首领战不补）
 func refill_enemies() -> void:
+	if boss_active:
+		return
+
+	# 第 3、5 波带精英
+	var allow_elite: bool = (wave == 3 or wave == 5)
+
 	while enemies.size() < MAX_ENEMIES:
-		spawn_enemy()
+		spawn_enemy(allow_elite and randf() < 0.4)
 
 
 # 清空并重新铺满（重开 / 升级后）
@@ -875,19 +992,27 @@ func _unhandled_input(event: InputEvent) -> void:
 
 
 func restart_game() -> void:
-	player_pos = screen_size / 2.0
+	player_max_hp = 100
 	player_hp = player_max_hp
+	player_pos = screen_size / 2.0
 	damage_cooldown = 0.0
 	is_game_over = false
 
 	kill_count = 0
 	cultivation = 0
+	wave = 1
+	wave_kills = 0
+	run_time = 0.0
+	game_won = false
+	boss_active = false
 	realm_index = 0
 	stage_index = 0
 	immortal_path = ""
 	immortal_stage = 0
 	path_choice_pending = false
 	path_choices.clear()
+
+	attack_interval = 0.55
 
 	sword_bonus = 0
 	armor_reduction = 0
@@ -1025,6 +1150,37 @@ func _draw() -> void:
 		18,
 		Color.WHITE
 	)
+
+	# 波次与时间
+	var mins := int(run_time) / 60
+	var secs := int(run_time) % 60
+	draw_string(
+		ThemeDB.fallback_font,
+		Vector2(screen_size.x - 260.0, 30),
+		get_wave_name(),
+		HORIZONTAL_ALIGNMENT_LEFT,
+		-1,
+		20,
+		Color("#ffd76e") if boss_active else Color.WHITE
+	)
+
+	draw_string(
+		ThemeDB.fallback_font,
+		Vector2(screen_size.x - 260.0, 56),
+		"时间 %02d:%02d" % [mins, secs],
+		HORIZONTAL_ALIGNMENT_LEFT,
+		-1,
+		16,
+		Color("#b9f5d7")
+	)
+
+	# 波次进度条
+	if not boss_active:
+		draw_rect(Rect2(Vector2(screen_size.x - 260.0, 68), Vector2(180, 8)), Color("#421c31"))
+		draw_rect(
+			Rect2(Vector2(screen_size.x - 260.0, 68), Vector2(180.0 * get_wave_progress(), 8)),
+			Color("#ffd76e")
+		)
 
 	# 当前功法加成
 	draw_string(
@@ -1204,39 +1360,66 @@ func _draw() -> void:
 			Color("#ffd76e")
 		)
 
-	# 死亡界面
+	# 结算界面（胜利 / 失败）
 	if is_game_over:
 		draw_rect(
 			Rect2(Vector2.ZERO, screen_size),
-			Color(0, 0, 0, 0.78)
+			Color(0, 0, 0, 0.82) if not game_won else Color(0.10, 0.06, 0.02, 0.88)
 		)
+
+		var title := "飞升成仙！" if game_won else "修仙失败！"
+		var title_color := Color("#ffd76e") if game_won else Color("#ff6b83")
 
 		draw_string(
 			ThemeDB.fallback_font,
-			Vector2(screen_size.x / 2.0 - 140.0, screen_size.y / 2.0 - 35.0),
-			"修仙失败！",
+			Vector2(screen_size.x / 2.0 - 200.0, screen_size.y / 2.0 - 60.0),
+			title,
 			HORIZONTAL_ALIGNMENT_CENTER,
-			280,
-			36,
-			Color("#ff6b83")
+			400,
+			40,
+			title_color
 		)
+
+		if game_won:
+			draw_string(
+				ThemeDB.fallback_font,
+				Vector2(screen_size.x / 2.0 - 200.0, screen_size.y / 2.0 - 20.0),
+				"击破魔道老祖，位列" + get_full_realm_name(),
+				HORIZONTAL_ALIGNMENT_CENTER,
+				400,
+				20,
+				Color("#ffe9a6")
+			)
+
+		var mins2 := int(run_time) / 60
+		var secs2 := int(run_time) % 60
 
 		draw_string(
 			ThemeDB.fallback_font,
-			Vector2(screen_size.x / 2.0 - 180.0, screen_size.y / 2.0 + 15.0),
+			Vector2(screen_size.x / 2.0 - 200.0, screen_size.y / 2.0 + 20.0),
 			"击败妖兽：" + str(kill_count) + "   最终境界：" + get_full_realm_name(),
 			HORIZONTAL_ALIGNMENT_CENTER,
-			360,
+			400,
 			20,
 			Color.WHITE
 		)
 
 		draw_string(
 			ThemeDB.fallback_font,
-			Vector2(screen_size.x / 2.0 - 140.0, screen_size.y / 2.0 + 60.0),
+			Vector2(screen_size.x / 2.0 - 200.0, screen_size.y / 2.0 + 52.0),
+			"用时 %02d:%02d   到达 %s" % [mins2, secs2, get_wave_name()],
+			HORIZONTAL_ALIGNMENT_CENTER,
+			400,
+			18,
+			Color("#b9f5d7")
+		)
+
+		draw_string(
+			ThemeDB.fallback_font,
+			Vector2(screen_size.x / 2.0 - 200.0, screen_size.y / 2.0 + 100.0),
 			"按 R 键重新开始",
 			HORIZONTAL_ALIGNMENT_CENTER,
-			280,
+			400,
 			22,
 			Color("#ffe9a6")
 		)
