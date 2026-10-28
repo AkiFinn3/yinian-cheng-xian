@@ -80,8 +80,8 @@ const TRIBULATION_REWARDS := [
 # ==========================================
 # 关卡流程（阶段 10）：5 波 + 首领
 # ==========================================
-const WAVE_TARGETS := [8, 12, 16, 20, 24]
-const MAX_WAVES := 5
+const WAVE_TARGETS := [8, 10, 12, 14, 16, 18, 20, 22, 24, 26, 28, 30]
+const MAX_WAVES := 12
 const ELITE_HP_MUL := 1.6
 const ELITE_DMG_MUL := 1.4
 const ELITE_SIZE_MUL := 1.25
@@ -249,8 +249,22 @@ const IMMORTAL_SKILLS := {
 
 # 妖兽数组（阶段 9：同屏多只）
 # 每只妖兽是一个 Dictionary：type/pos/speed/size/max_hp/hp/hit_flash
-const MAX_ENEMIES := 5
+# 同屏妖兽上限（v0.8.0：随波次增长）
+const BASE_MAX_ENEMIES := 5
+
 var enemies: Array[Dictionary] = []
+
+# ==========================================
+# 修为晶石（v0.8.0）：击杀掉落后需靠近拾取
+# ==========================================
+const ORB_ATTRACT_RADIUS := 150.0
+const ORB_PICKUP_RADIUS := 30.0
+const ORB_LIFETIME := 30.0
+const ORB_MAX_COUNT := 200
+const ORB_MERGE_RADIUS := 40.0
+const ORB_FLY_SPEED := 420.0
+
+var orbs: Array[Dictionary] = []
 
 # 自动攻击属性
 var attack_range: float = 420.0
@@ -342,6 +356,7 @@ func _process(delta: float) -> void:
 	update_player(delta)
 	update_enemies(delta)
 	update_projectiles(delta)
+	update_orbs(delta)
 	update_auto_attack()
 
 	queue_redraw()
@@ -512,6 +527,86 @@ func update_projectiles(delta: float) -> void:
 # 妖兽死亡、修为奖励与重生
 # ==========================================
 
+# ==========================================
+# 修为晶石：掉落、合并、吸附、拾取
+# ==========================================
+
+# 在指定位置掉落修为晶石（同位置附近自动合并）
+func spawn_orb(pos: Vector2, value: int) -> void:
+	if value <= 0:
+		return
+
+	# 先尝试合并到附近已有的晶石
+	for o in orbs:
+		if (o["pos"] as Vector2).distance_to(pos) <= ORB_MERGE_RADIUS:
+			o["value"] = int(o["value"]) + value
+			o["life"] = ORB_LIFETIME
+			return
+
+	# 数量上限：超了直接吸收最老的
+	if orbs.size() >= ORB_MAX_COUNT:
+		var oldest: Dictionary = orbs[0]
+		cultivation += int(oldest["value"])
+		orbs.remove_at(0)
+
+	orbs.append({
+		"pos": pos,
+		"value": value,
+		"life": ORB_LIFETIME,
+	})
+
+
+# 每帧更新晶石：吸附、拾取、超时
+func update_orbs(delta: float) -> void:
+	for i in range(orbs.size() - 1, -1, -1):
+		var o: Dictionary = orbs[i]
+		o["life"] = float(o["life"]) - delta
+
+		var pos: Vector2 = o["pos"]
+		var dist := pos.distance_to(player_pos)
+
+		# 超时自动吸收
+		if float(o["life"]) <= 0.0:
+			cultivation += int(o["value"])
+			orbs.remove_at(i)
+			continue
+
+		# 拾取
+		if dist <= ORB_PICKUP_RADIUS:
+			cultivation += int(o["value"])
+			orbs.remove_at(i)
+			check_level_up()
+			continue
+
+		# 吸附飞行
+		if dist <= ORB_ATTRACT_RADIUS:
+			var dir := (player_pos - pos).normalized()
+			var speed := ORB_FLY_SPEED * (1.0 + (ORB_ATTRACT_RADIUS - dist) / ORB_ATTRACT_RADIUS)
+			o["pos"] = pos + dir * speed * delta
+
+
+# 待拾取修为总数
+func get_pending_xp() -> int:
+	var total := 0
+	for o in orbs:
+		total += int(o["value"])
+	return total
+
+
+# 修为变化后检查是否升级
+func check_level_up() -> void:
+	if is_max_realm():
+		cultivation = mini(cultivation, get_next_level_xp())
+		return
+
+	if upgrade_pending or path_choice_pending or tribulation_reward_pending or tribulation_pending:
+		return
+
+	if cultivation >= get_next_level_xp():
+		cultivation -= get_next_level_xp()
+		begin_upgrade()
+
+
 func kill_enemy(index: int) -> void:
 	if index < 0 or index >= enemies.size():
 		return
@@ -522,9 +617,13 @@ func kill_enemy(index: int) -> void:
 	var is_elite: bool = bool(e.get("elite", false))
 	var is_boss: bool = (str(e["type"]) == "boss")
 
+	var drop_pos: Vector2 = e["pos"]
+
 	enemies.remove_at(index)
 	kill_count += 1
-	cultivation += reward
+
+	# 修为改为掉落晶石，需玩家靠近拾取
+	spawn_orb(drop_pos, reward)
 
 	if is_boss:
 		message_text = "★ 击败 " + enemy_name + "！"
@@ -534,7 +633,7 @@ func kill_enemy(index: int) -> void:
 		is_game_over = true
 		return
 
-	message_text = ("精英·" if is_elite else "") + "击败" + enemy_name + "！修为 +" + str(reward)
+	message_text = ("精英·" if is_elite else "") + "击败" + enemy_name + "！修为掉落 " + str(reward)
 	message_timer = 1.0
 
 	# 波次推进
@@ -553,17 +652,7 @@ func kill_enemy(index: int) -> void:
 	if path_choice_pending:
 		return
 
-	# 已封顶：修为停在阈值，不再触发升级
-	if is_max_realm():
-		cultivation = mini(cultivation, get_next_level_xp())
-		refill_enemies()
-		return
-
-	if cultivation >= get_next_level_xp():
-		cultivation -= get_next_level_xp()
-		begin_upgrade()
-		return
-
+	# 升级由晶石拾取时触发，这里只补怪
 	refill_enemies()
 
 
@@ -664,7 +753,8 @@ func advance_wave() -> void:
 
 	message_text = "第 " + str(wave) + " 波来袭！"
 	message_timer = 2.0
-	reset_enemies()
+	# 不清场！保留场上妖兽，只补到新的上限
+	refill_enemies()
 
 
 # 当前波次名称
@@ -682,15 +772,20 @@ func get_wave_progress() -> float:
 	return clampf(float(wave_kills) / float(target), 0.0, 1.0)
 
 
-# 补满到 MAX_ENEMIES 只（首领战不补）
+# 同屏上限：基础 5，随波次增长（第 12 波 11 只）
+func get_max_enemies() -> int:
+	return BASE_MAX_ENEMIES + (wave - 1) / 2
+
+
+# 补满到当前上限（首领战不补）
 func refill_enemies() -> void:
 	if boss_active or tribulation_pending or tribulation_reward_pending:
 		return
 
-	# 第 3、5 波带精英
-	var allow_elite: bool = (wave == 3 or wave == 5)
+	# 第 3 波起每 2 波出现精英，后期密度提升
+	var allow_elite: bool = (wave >= 3 and wave % 2 == 1)
 
-	while enemies.size() < MAX_ENEMIES:
+	while enemies.size() < get_max_enemies():
 		spawn_enemy(allow_elite and randf() < 0.4)
 
 
@@ -1211,6 +1306,7 @@ func restart_game() -> void:
 	projectile_damages.clear()
 	projectile_lifetimes.clear()
 	projectile_is_critical.clear()
+	orbs.clear()
 
 	attack_cooldown = 0.0
 	message_timer = 0.0
@@ -1276,6 +1372,27 @@ func _draw() -> void:
 			Color("#ff9b4a") if e.has("tribulation") else Color("#e8d8ff")
 		)
 
+	# 修为晶石
+	for o in orbs:
+		var op: Vector2 = o["pos"]
+		var val := int(o["value"])
+
+		# 数值越大越亮、越大
+		var orb_size := clampf(4.0 + float(val) / 12.0, 4.0, 11.0)
+		var glow := clampf(float(val) / 60.0, 0.25, 1.0)
+
+		if val >= 50:
+			draw_circle(op, orb_size * 2.2, Color(0.45, 0.85, 1.0, 0.18 * glow))
+
+		draw_rect(
+			Rect2(op - Vector2.ONE * orb_size / 2.0, Vector2.ONE * orb_size),
+			Color(0.55, 0.9, 1.0, 0.55 + 0.45 * glow)
+		)
+		draw_rect(
+			Rect2(op - Vector2.ONE * orb_size / 4.0, Vector2.ONE * orb_size / 2.0),
+			Color(1, 1, 1, 0.8)
+		)
+
 	# 玩家
 	var player_color := Color("#45e5df")
 
@@ -1327,6 +1444,17 @@ func _draw() -> void:
 		18,
 		Color.WHITE
 	)
+
+	if get_pending_xp() > 0:
+		draw_string(
+			ThemeDB.fallback_font,
+			Vector2(20, screen_size.y - 44.0),
+			"待拾取修为：" + str(get_pending_xp()),
+			HORIZONTAL_ALIGNMENT_LEFT,
+			-1,
+			16,
+			Color("#7fd8ff")
+		)
 
 	draw_string(
 		ThemeDB.fallback_font,
