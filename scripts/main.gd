@@ -87,6 +87,38 @@ const ARTIFACTS := {
 
 const MAX_ARTIFACTS := 3
 
+# ==========================================
+# 符箓（v0.13.0）：一次性消耗品，最多 5 张
+# Q 释放 / E 切换
+# ==========================================
+const TALISMANS := {
+	"火球符": {"desc": "火球爆炸 60 伤害", "type": "fireball", "value": 60},
+	"冰封符": {"desc": "冻结全场 1.5 秒",  "type": "freeze",   "value": 1.5},
+	"雷击符": {"desc": "全场 40 伤害",     "type": "thunder",  "value": 40},
+	"护身符": {"desc": "3 秒无敌",         "type": "shield",   "value": 3.0},
+	"疾行符": {"desc": "3 秒移速 +150%",   "type": "haste",    "value": 3.0},
+	"聚灵符": {"desc": "吸收全场修为晶石", "type": "gather",   "value": 0},
+}
+
+const MAX_TALISMANS := 5
+
+# ==========================================
+# 飞剑（v0.13.0）：境界解锁，空格释放，8 秒冷却
+# ==========================================
+const FLYING_SWORDS := {
+	"一叶飞剑": {"desc": "直线穿透，伤害 ×3", "count": 1,  "spread": 0.0,  "mul": 3.0,  "pierce": true},
+	"三才剑阵": {"desc": "3 道扇形，伤害 ×2", "count": 3,  "spread": 0.35, "mul": 2.0,  "pierce": false},
+	"万剑归宗": {"desc": "12 道环形，伤害 ×2", "count": 12, "spread": 0.0,  "mul": 2.0,  "pierce": false},
+	"斩仙飞刀": {"desc": "巨型剑气，伤害 ×10", "count": 1,  "spread": 0.0,  "mul": 10.0, "pierce": true},
+}
+
+const SWORD_UNLOCK := {
+	"筑基": "一叶飞剑",
+	"化炁": "三才剑阵",
+	"炼神": "万剑归宗",
+	"天仙": "斩仙飞刀",
+}
+
 const ELEMENT_SKILLS := {
 	"烈焰剑气": {"element": "fire",    "desc": "剑气附带灼烧：每秒 -8 血，持续 3 秒"},
 	"寒冰剑气": {"element": "ice",     "desc": "剑气附带减速 35%，持续 2 秒"},
@@ -386,6 +418,14 @@ var speed_bonus: float = 0.0
 var crit_bonus: float = 0.0     # 暴击率加成（百分点，如 5 表示 +5%）
 var hp_regen: float = 0.0       # 每秒生命回复
 
+# 符箓与飞剑（v0.13.0）
+var talisman_bag: Array[String] = []        # 符箓背包（最多 5）
+var selected_talisman: int = 0
+var unlocked_sword: String = ""             # 当前可用飞剑
+var sword_cooldown: float = 0.0             # 飞剑冷却
+var invincible_timer: float = 0.0           # 护身符无敌
+var haste_timer: float = 0.0                # 疾行符加速
+
 # 法器（v0.11.0）
 var artifacts: Array[String] = []           # 已装备法器名
 var artifact_drop_pending: bool = false
@@ -453,6 +493,14 @@ func _process(delta: float) -> void:
 	run_time += delta
 
 	damage_cooldown = maxf(0.0, damage_cooldown - delta)
+	sword_cooldown = maxf(0.0, sword_cooldown - delta)
+	invincible_timer = maxf(0.0, invincible_timer - delta)
+	haste_timer = maxf(0.0, haste_timer - delta)
+
+	# 冻结计时
+	for e in enemies:
+		if e.has("frozen") and float(e["frozen"]) > 0.0:
+			e["frozen"] = float(e["frozen"]) - delta
 
 	# 生命回复
 	if hp_regen > 0.0 and player_hp < player_max_hp:
@@ -508,6 +556,8 @@ func update_player(delta: float) -> void:
 		direction = direction.normalized()
 
 	var current_speed := player_speed + speed_bonus
+	if haste_timer > 0.0:
+		current_speed *= 2.5
 	var move_vec := direction * current_speed * delta
 	player_pos += move_vec
 
@@ -548,12 +598,13 @@ func update_enemies(delta: float) -> void:
 		var direction: Vector2 = player_pos - e["pos"]
 		var distance := direction.length()
 
-		if distance > 0.001:
+		var frozen := (e.has("frozen") and float(e["frozen"]) > 0.0)
+		if distance > 0.001 and not frozen:
 			e["pos"] = e["pos"] + direction.normalized() * float(e["speed"]) * speed_mul * delta
 
 		var contact_distance := (player_size + float(e["size"])) / 2.0
 
-		if distance < contact_distance and damage_cooldown <= 0.0:
+		if distance < contact_distance and damage_cooldown <= 0.0 and invincible_timer <= 0.0:
 			var enemy_damage: int = int(e.get("damage", ENEMY_TYPES[e["type"]]["damage"]))
 			var reduction: float = clampf(damage_reduction, 0.0, 0.7)
 
@@ -914,6 +965,11 @@ func kill_enemy(index: int) -> void:
 	if is_elite and artifacts.size() < MAX_ARTIFACTS and randf() < 0.15:
 		roll_artifact_choices()
 
+	# 符箓掉落：普通 8%，精英 40%
+	var talisman_chance := 0.40 if is_elite else 0.08
+	if randf() < talisman_chance:
+		roll_talisman_drop()
+
 	# 升级由晶石拾取时触发，这里只补怪
 	refill_enemies()
 
@@ -1171,6 +1227,167 @@ func apply_skill_effect(skill_name: String) -> void:
 	apply_stat(stat, float(data["value"]))
 
 
+# ==========================================
+# 符箓
+# ==========================================
+
+# 获得符箓（满了则替换最旧）
+func add_talisman(name: String) -> void:
+	if not TALISMANS.has(name):
+		return
+	if talisman_bag.size() >= MAX_TALISMANS:
+		talisman_bag.remove_at(0)
+	talisman_bag.append(name)
+	message_text = "获得符箓：" + name
+	message_timer = 1.5
+
+
+# 随机掉落符箓
+func roll_talisman_drop() -> void:
+	var keys: Array = TALISMANS.keys()
+	if keys.size() == 0:
+		return
+	add_talisman(str(keys[randi_range(0, keys.size() - 1)]))
+
+
+# 切换符箓
+func cycle_talisman() -> void:
+	if talisman_bag.size() <= 1:
+		return
+	selected_talisman = (selected_talisman + 1) % talisman_bag.size()
+
+
+# 释放符箓
+func use_talisman() -> void:
+	if talisman_bag.size() == 0:
+		return
+	if selected_talisman >= talisman_bag.size():
+		selected_talisman = 0
+
+	var name: String = talisman_bag[selected_talisman]
+	var data: Dictionary = TALISMANS[name]
+
+	match str(data["type"]):
+		"fireball":
+			cast_fireball(int(data["value"]))
+		"freeze":
+			for e in enemies:
+				e["frozen"] = float(data["value"])
+		"thunder":
+			cast_thunder_all(int(data["value"]))
+		"shield":
+			invincible_timer = float(data["value"])
+		"haste":
+			haste_timer = float(data["value"])
+		"gather":
+			for o in orbs:
+				cultivation += int(round(float(o["value"]) * (1.0 + xp_bonus / 100.0)))
+			orbs.clear()
+			check_level_up()
+
+	talisman_bag.remove_at(selected_talisman)
+	if selected_talisman >= talisman_bag.size():
+		selected_talisman = maxi(0, talisman_bag.size() - 1)
+
+	message_text = "使用符箓：" + name
+	message_timer = 1.5
+
+
+# 火球：向最近妖兽爆炸
+func cast_fireball(damage: int) -> void:
+	if enemies.size() == 0:
+		return
+
+	var target: Dictionary = enemies[0]
+	var best := 1e20
+	for e in enemies:
+		var d: float = (e["pos"] as Vector2).distance_to(player_pos)
+		if d < best:
+			best = d
+			target = e
+
+	var center: Vector2 = target["pos"]
+
+	for i in range(enemies.size() - 1, -1, -1):
+		var e: Dictionary = enemies[i]
+		if (e["pos"] as Vector2).distance_to(center) <= 80.0:
+			e["hp"] = int(e["hp"]) - damage
+			e["hit_flash"] = 0.12
+			if int(e["hp"]) <= 0:
+				kill_enemy(i)
+
+
+# 雷击：全场伤害
+func cast_thunder_all(damage: int) -> void:
+	for i in range(enemies.size() - 1, -1, -1):
+		var e: Dictionary = enemies[i]
+		e["hp"] = int(e["hp"]) - damage
+		e["hit_flash"] = 0.12
+		if int(e["hp"]) <= 0:
+			kill_enemy(i)
+
+
+# ==========================================
+# 飞剑
+# ==========================================
+
+# 检查境界解锁飞剑
+func update_sword_unlock() -> void:
+	var realm_name := ""
+	if immortal_stage >= 3:
+		realm_name = "天仙"
+	elif immortal_stage >= 1:
+		realm_name = ""
+	else:
+		realm_name = str(REALMS[realm_index]["name"])
+
+	if SWORD_UNLOCK.has(realm_name):
+		var sword: String = str(SWORD_UNLOCK[realm_name])
+		if unlocked_sword != sword:
+			unlocked_sword = sword
+			message_text = "领悟飞剑：" + sword
+			message_timer = 2.5
+
+
+# 释放飞剑
+func use_flying_sword() -> void:
+	if unlocked_sword == "" or sword_cooldown > 0.0:
+		return
+
+	var data: Dictionary = FLYING_SWORDS[unlocked_sword]
+	var count := int(data["count"])
+	var mul := float(data["mul"])
+	var spread := float(data["spread"])
+
+	var base_dir := Vector2.RIGHT
+	if enemies.size() > 0:
+		var best := 1e20
+		for e in enemies:
+			var d: float = (e["pos"] as Vector2).distance_to(player_pos)
+			if d < best:
+				best = d
+				base_dir = ((e["pos"] as Vector2) - player_pos).normalized()
+
+	for i in range(count):
+		var dir := base_dir
+		if count == 12:
+			dir = base_dir.rotated(TAU * float(i) / 12.0)
+		elif count > 1:
+			dir = base_dir.rotated(spread * float(i - (count - 1) / 2.0))
+
+		var dmg := int(float(attack_damage + sword_bonus) * mul)
+		projectile_positions.append(player_pos + dir * 18.0)
+		projectile_directions.append(dir)
+		projectile_damages.append(dmg)
+		projectile_lifetimes.append(projectile_lifetime * 1.5)
+		projectile_is_critical.append(false)
+		projectile_elements.append(sword_element)
+
+	sword_cooldown = 8.0
+	message_text = "飞剑：" + unlocked_sword
+	message_timer = 1.5
+
+
 # 装备一件法器（应用效果）
 func equip_artifact(name: String) -> void:
 	if not ARTIFACTS.has(name):
@@ -1288,6 +1505,7 @@ func choose_skill(index: int) -> void:
 		return
 
 	advance_realm()
+	update_sword_unlock()
 	after_advance()
 
 
@@ -1620,6 +1838,20 @@ func _input(event: InputEvent) -> void:
 
 func _unhandled_input(event: InputEvent) -> void:
 	if event is InputEventKey and event.pressed and not event.echo:
+		# 符箓与飞剑（游戏中随时可用）
+		if not is_game_over and not upgrade_pending and not path_choice_pending \
+				and not tribulation_reward_pending and not artifact_drop_pending:
+			match event.keycode:
+				KEY_Q:
+					use_talisman()
+					return
+				KEY_E:
+					cycle_talisman()
+					return
+				KEY_SPACE:
+					use_flying_sword()
+					return
+
 		if is_game_over:
 			if event.keycode == KEY_R:
 				restart_game()
@@ -1679,6 +1911,12 @@ func restart_game() -> void:
 	boss_active = false
 
 	distance_traveled = 0.0
+	talisman_bag.clear()
+	selected_talisman = 0
+	unlocked_sword = ""
+	sword_cooldown = 0.0
+	invincible_timer = 0.0
+	haste_timer = 0.0
 
 	artifacts.clear()
 	artifact_drop_pending = false
@@ -1878,6 +2116,34 @@ func _draw() -> void:
 			-1,
 			16,
 			Color("#7fd8ff")
+		)
+
+	# 符箓与飞剑栏
+	if talisman_bag.size() > 0:
+		var t_text := "符箓 [Q]："
+		for i in range(talisman_bag.size()):
+			var mark := "▶" if i == selected_talisman else " "
+			t_text += mark + str(talisman_bag[i]) + " "
+		draw_string(
+			ThemeDB.fallback_font,
+			Vector2(20, screen_size.y - 100.0),
+			t_text,
+			HORIZONTAL_ALIGNMENT_LEFT,
+			-1,
+			15,
+			Color("#a8d8ff")
+		)
+
+	if unlocked_sword != "":
+		var cd_text := "就绪" if sword_cooldown <= 0.0 else "%.1f秒" % sword_cooldown
+		draw_string(
+			ThemeDB.fallback_font,
+			Vector2(20, screen_size.y - 126.0),
+			"飞剑 [空格]：" + unlocked_sword + " (" + cd_text + ")",
+			HORIZONTAL_ALIGNMENT_LEFT,
+			-1,
+			15,
+			Color("#ffd76e") if sword_cooldown <= 0.0 else Color("#8a7a4a")
 		)
 
 	# 法器栏
