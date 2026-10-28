@@ -2641,7 +2641,7 @@ func get_hovered_slot_index() -> int:
 
 # 画槽位选择界面
 func draw_slot_select() -> void:
-	draw_rect(Rect2(Vector2.ZERO, screen_size), Color("#0d1512"))
+	draw_rect(Rect2(Vector2.ZERO, screen_size), Color("#14110D"))
 
 	var title := ""
 	match slot_select_mode:
@@ -2656,7 +2656,7 @@ func draw_slot_select() -> void:
 		HORIZONTAL_ALIGNMENT_CENTER,
 		screen_size.x,
 		30,
-		Color("#ffd76e")
+		Color("#C9A227")
 	)
 
 	var hovered := get_hovered_slot_index()
@@ -2672,14 +2672,14 @@ func draw_slot_select() -> void:
 		var disabled := (slot_select_mode == "load" and info.is_empty())
 
 		if disabled:
-			draw_rect(rect, Color("#121a16"))
-			draw_rect(rect, Color("#2a3d33"), false, 1.0)
+			draw_rect(rect, Color("#14110D"))
+			draw_rect(rect, Color("#2E2822"), false, 1.0)
 		elif is_hover:
-			draw_rect(rect, Color("#1e3a2e"))
-			draw_rect(rect, Color("#ffd76e"), false, 3.0)
+			draw_rect(rect, Color("#2E2822"))
+			draw_rect(rect, Color("#C9A227"), false, 3.0)
 		else:
-			draw_rect(rect, Color("#16261f"))
-			draw_rect(rect, Color("#3f6b55"), false, 1.0)
+			draw_rect(rect, Color("#1C1814"))
+			draw_rect(rect, Color("#3A322A"), false, 1.0)
 
 		# 槽位编号
 		draw_string(
@@ -2689,7 +2689,7 @@ func draw_slot_select() -> void:
 			HORIZONTAL_ALIGNMENT_LEFT,
 			rect.size.x - 28.0,
 			17,
-			Color("#ffd76e") if is_hover else Color("#9ecfff")
+			Color("#C9A227") if is_hover else Color("#E5C84A")
 		)
 
 		if info.is_empty():
@@ -2700,7 +2700,7 @@ func draw_slot_select() -> void:
 				HORIZONTAL_ALIGNMENT_LEFT,
 				rect.size.x - 28.0,
 				16,
-				Color("#3f5a4b")
+				Color("#2E2822")
 			)
 		else:
 			draw_string(
@@ -2710,7 +2710,7 @@ func draw_slot_select() -> void:
 				HORIZONTAL_ALIGNMENT_LEFT,
 				rect.size.x - 28.0,
 				16,
-				Color("#c8e8d8")
+				Color("#F2EDE3")
 			)
 			draw_string(
 				ThemeDB.fallback_font,
@@ -2719,7 +2719,7 @@ func draw_slot_select() -> void:
 				HORIZONTAL_ALIGNMENT_LEFT,
 				rect.size.x - 28.0,
 				13,
-				Color("#6f9f85")
+				Color("#9A8A74")
 			)
 
 	draw_string(
@@ -2729,7 +2729,7 @@ func draw_slot_select() -> void:
 		HORIZONTAL_ALIGNMENT_CENTER,
 		screen_size.x,
 		13,
-		Color("#4f7f65")
+		Color("#9A8A74")
 	)
 
 	draw_string(
@@ -2739,7 +2739,7 @@ func draw_slot_select() -> void:
 		HORIZONTAL_ALIGNMENT_CENTER,
 		screen_size.x,
 		15,
-		Color("#5f8f75")
+		Color("#9A8A74")
 	)
 
 
@@ -2803,7 +2803,7 @@ func get_pause_index_at(pos: Vector2) -> int:
 
 # 画主菜单
 func draw_main_menu() -> void:
-	draw_rect(Rect2(Vector2.ZERO, screen_size), Color("#0d1512"))
+	draw_rect(Rect2(Vector2.ZERO, screen_size), Color("#14110D"))
 
 	# 标题
 	draw_string(
@@ -2813,7 +2813,7 @@ func draw_main_menu() -> void:
 		HORIZONTAL_ALIGNMENT_CENTER,
 		screen_size.x,
 		56,
-		Color("#ffd76e")
+		Color("#C9A227")
 	)
 
 	draw_string(
@@ -2823,7 +2823,7 @@ func draw_main_menu() -> void:
 		HORIZONTAL_ALIGNMENT_CENTER,
 		screen_size.x,
 		18,
-		Color("#7fbfa0")
+		Color("#4A8C82")
 	)
 
 	var labels := ["开始游戏", "载入存档", "设置", "退出"]
@@ -2837,20 +2837,20 @@ func draw_main_menu() -> void:
 		var disabled := (i == 1 and not has_saved)
 
 		if disabled:
-			draw_rect(rect, Color("#121a16"))
-			draw_rect(rect, Color("#2a3d33"), false, 1.0)
+			draw_rect(rect, Color("#14110D"))
+			draw_rect(rect, Color("#2E2822"), false, 1.0)
 		elif is_hover:
-			draw_rect(rect, Color("#1e3a2e"))
-			draw_rect(rect, Color("#ffd76e"), false, 2.0)
+			draw_rect(rect, Color("#2E2822"))
+			draw_rect(rect, Color("#C9A227"), false, 2.0)
 		else:
-			draw_rect(rect, Color("#16261f"))
-			draw_rect(rect, Color("#3f6b55"), false, 1.0)
+			draw_rect(rect, Color("#1C1814"))
+			draw_rect(rect, Color("#3A322A"), false, 1.0)
 
-		var label_color := Color("#c8e8d8")
+		var label_color := Color("#F2EDE3")
 		if disabled:
-			label_color = Color("#3f5a4b")
+			label_color = Color("#2E2822")
 		elif is_hover:
-			label_color = Color("#ffd76e")
+			label_color = Color("#C9A227")
 
 		draw_string(
 			ThemeDB.fallback_font,
@@ -2879,7 +2879,7 @@ func draw_main_menu() -> void:
 				HORIZONTAL_ALIGNMENT_CENTER,
 				screen_size.x,
 				13,
-				Color("#6f9f85")
+				Color("#9A8A74")
 			)
 
 	# 存档位置提示
@@ -2890,7 +2890,7 @@ func draw_main_menu() -> void:
 		HORIZONTAL_ALIGNMENT_CENTER,
 		screen_size.x,
 		12,
-		Color("#3f6b55")
+		Color("#3A322A")
 	)
 
 	draw_string(
@@ -2900,7 +2900,7 @@ func draw_main_menu() -> void:
 		HORIZONTAL_ALIGNMENT_CENTER,
 		screen_size.x,
 		15,
-		Color("#5f8f75")
+		Color("#9A8A74")
 	)
 
 
@@ -2915,7 +2915,7 @@ func draw_pause_menu() -> void:
 		HORIZONTAL_ALIGNMENT_CENTER,
 		screen_size.x,
 		40,
-		Color("#ffd76e")
+		Color("#C9A227")
 	)
 
 	var labels := ["继续游戏", "保存进度", "设置", "返回主菜单"]
@@ -2926,11 +2926,11 @@ func draw_pause_menu() -> void:
 		var is_hover := (i == hovered) or (i == pause_selection and hovered < 0)
 
 		if is_hover:
-			draw_rect(rect, Color("#1e3a2e"))
-			draw_rect(rect, Color("#ffd76e"), false, 2.0)
+			draw_rect(rect, Color("#2E2822"))
+			draw_rect(rect, Color("#C9A227"), false, 2.0)
 		else:
-			draw_rect(rect, Color("#16261f"))
-			draw_rect(rect, Color("#3f6b55"), false, 1.0)
+			draw_rect(rect, Color("#1C1814"))
+			draw_rect(rect, Color("#3A322A"), false, 1.0)
 
 		draw_string(
 			ThemeDB.fallback_font,
@@ -2939,7 +2939,7 @@ func draw_pause_menu() -> void:
 			HORIZONTAL_ALIGNMENT_CENTER,
 			rect.size.x,
 			21,
-			Color("#ffd76e") if is_hover else Color("#c8e8d8")
+			Color("#C9A227") if is_hover else Color("#F2EDE3")
 		)
 
 	draw_string(
@@ -2949,7 +2949,7 @@ func draw_pause_menu() -> void:
 		HORIZONTAL_ALIGNMENT_CENTER,
 		screen_size.x,
 		15,
-		Color("#5f8f75")
+		Color("#9A8A74")
 	)
 
 
@@ -3266,7 +3266,7 @@ func select_settings(index: int) -> void:
 
 
 func draw_settings() -> void:
-	draw_rect(Rect2(Vector2.ZERO, screen_size), Color("#0d1512"))
+	draw_rect(Rect2(Vector2.ZERO, screen_size), Color("#14110D"))
 
 	draw_string(
 		ThemeDB.fallback_font,
@@ -3275,7 +3275,7 @@ func draw_settings() -> void:
 		HORIZONTAL_ALIGNMENT_CENTER,
 		screen_size.x,
 		36,
-		Color("#ffd76e")
+		Color("#C9A227")
 	)
 
 	var labels := ["音效音量", "静音", "返回"]
@@ -3286,11 +3286,11 @@ func draw_settings() -> void:
 		var is_hover := (i == hovered) or (i == settings_selection and hovered < 0)
 
 		if is_hover:
-			draw_rect(rect, Color("#1e3a2e"))
-			draw_rect(rect, Color("#ffd76e"), false, 2.0)
+			draw_rect(rect, Color("#2E2822"))
+			draw_rect(rect, Color("#C9A227"), false, 2.0)
 		else:
-			draw_rect(rect, Color("#16261f"))
-			draw_rect(rect, Color("#3f6b55"), false, 1.0)
+			draw_rect(rect, Color("#1C1814"))
+			draw_rect(rect, Color("#3A322A"), false, 1.0)
 
 		draw_string(
 			ThemeDB.fallback_font,
@@ -3299,23 +3299,23 @@ func draw_settings() -> void:
 			HORIZONTAL_ALIGNMENT_LEFT,
 			200.0,
 			20,
-			Color("#ffd76e") if is_hover else Color("#c8e8d8")
+			Color("#C9A227") if is_hover else Color("#F2EDE3")
 		)
 
 		# 第 1 项画滑杆，第 2 项画开关状态
 		if i == 0:
 			var bar := get_volume_slider_rect(i)
-			draw_rect(bar, Color("#0d1a14"))
-			draw_rect(bar, Color("#3f6b55"), false, 1.0)
+			draw_rect(bar, Color("#1C1814"))
+			draw_rect(bar, Color("#3A322A"), false, 1.0)
 			draw_rect(
 				Rect2(bar.position, Vector2(bar.size.x * sfx_volume, bar.size.y)),
-				Color("#6fd8a0")
+				Color("#4A8C82")
 			)
 			# 滑块头
 			var knob_x := bar.position.x + bar.size.x * sfx_volume
 			draw_rect(
 				Rect2(Vector2(knob_x - 4.0, bar.position.y - 4.0), Vector2(8.0, bar.size.y + 8.0)),
-				Color("#ffd76e")
+				Color("#C9A227")
 			)
 			draw_string(
 				ThemeDB.fallback_font,
@@ -3324,7 +3324,7 @@ func draw_settings() -> void:
 				HORIZONTAL_ALIGNMENT_LEFT,
 				60.0,
 				16,
-				Color("#9ecfff")
+				Color("#E5C84A")
 			)
 		elif i == 1:
 			var on := sfx_volume > 0.001
@@ -3335,7 +3335,7 @@ func draw_settings() -> void:
 				HORIZONTAL_ALIGNMENT_LEFT,
 				100.0,
 				20,
-				Color("#6fd8a0") if on else Color("#8a5a5a")
+				Color("#4A8C82") if on else Color("#C42830")
 			)
 
 	draw_string(
@@ -3345,7 +3345,7 @@ func draw_settings() -> void:
 		HORIZONTAL_ALIGNMENT_CENTER,
 		screen_size.x,
 		15,
-		Color("#5f8f75")
+		Color("#9A8A74")
 	)
 
 
@@ -3448,9 +3448,9 @@ func get_hud_icon_start(count: int) -> float:
 # 绘制单个技能图标
 func draw_hud_icon(pos: Vector2, label: String, sub: String, color: Color, ready: bool, active: bool) -> void:
 	var r := Rect2(pos, Vector2.ONE * HUD_ICON_SIZE)
-	var bg := Color("#2a3d38") if ready else Color("#1a2420")
+	var bg := Color("#2E2822") if ready else Color("#14110D")
 	draw_rect(r, bg)
-	draw_rect(r, color if ready else Color("#4a5a55"), false, 2.0 if active else 1.5)
+	draw_rect(r, color if ready else Color("#3A322A"), false, 2.0 if active else 1.5)
 
 	# 图标内文字（取标签首字）
 	draw_string(
@@ -3460,7 +3460,7 @@ func draw_hud_icon(pos: Vector2, label: String, sub: String, color: Color, ready
 		HORIZONTAL_ALIGNMENT_CENTER,
 		HUD_ICON_SIZE,
 		20,
-		color if ready else Color("#6a7a75")
+		color if ready else Color("#9A8A74")
 	)
 
 	# 下方小字
@@ -3471,7 +3471,7 @@ func draw_hud_icon(pos: Vector2, label: String, sub: String, color: Color, ready
 		HORIZONTAL_ALIGNMENT_CENTER,
 		HUD_ICON_SIZE,
 		11,
-		Color("#9ab5ad")
+		Color("#9A8A74")
 	)
 
 
@@ -3482,7 +3482,7 @@ func draw_bottom_hud() -> void:
 	var bar_y := screen_size.y - HUD_BAR_H
 
 	# --- 修为进度条（最底部，通栏）---
-	draw_rect(Rect2(Vector2(0, bar_y), Vector2(screen_size.x, HUD_BAR_H)), Color("#101a17"))
+	draw_rect(Rect2(Vector2(0, bar_y), Vector2(screen_size.x, HUD_BAR_H)), Color("#14110D"))
 
 	var need := get_next_level_xp()
 	var ratio := 1.0 if is_max_realm() else clampf(float(cultivation) / float(need), 0.0, 1.0)
@@ -3490,11 +3490,11 @@ func draw_bottom_hud() -> void:
 	# 进度条本体（渐变色条）
 	draw_rect(
 		Rect2(Vector2(0, bar_y), Vector2(screen_size.x * ratio, HUD_BAR_H)),
-		Color("#2f8f6f")
+		Color("#4A8C82")
 	)
 	draw_rect(
 		Rect2(Vector2(0, bar_y), Vector2(screen_size.x * ratio, HUD_BAR_H * 0.45)),
-		Color("#3fbf92")
+		Color("#4A8C82")
 	)
 
 	# 进度条文字
@@ -3520,7 +3520,7 @@ func draw_bottom_hud() -> void:
 		icons.append({
 			"label": "剑",
 			"sub": "空格" if ready else "%.1fs" % sword_cooldown,
-			"color": Color("#ffd76e"),
+			"color": Color("#C9A227"),
 			"ready": ready,
 			"active": false,
 		})
@@ -3531,7 +3531,7 @@ func draw_bottom_hud() -> void:
 		icons.append({
 			"label": str(tname).substr(0, 1),
 			"sub": "Q" if i == selected_talisman else "E切",
-			"color": Color("#a8d8ff"),
+			"color": Color("#E5C84A"),
 			"ready": true,
 			"active": i == selected_talisman,
 		})
@@ -3541,7 +3541,7 @@ func draw_bottom_hud() -> void:
 		icons.append({
 			"label": "阵",
 			"sub": "%.0fs" % float(active_formation["life"]),
-			"color": Color("#6fd8a0"),
+			"color": Color("#4A8C82"),
 			"ready": true,
 			"active": true,
 		})
@@ -3549,7 +3549,7 @@ func draw_bottom_hud() -> void:
 		icons.append({
 			"label": "阵",
 			"sub": "F",
-			"color": Color("#6fd8a0"),
+			"color": Color("#4A8C82"),
 			"ready": true,
 			"active": false,
 		})
@@ -3559,7 +3559,7 @@ func draw_bottom_hud() -> void:
 		icons.append({
 			"label": str(a).substr(0, 1),
 			"sub": str(a).substr(0, 3),
-			"color": Color("#d4a05a"),
+			"color": Color("#C9A227"),
 			"ready": true,
 			"active": false,
 		})
@@ -3680,10 +3680,10 @@ func _draw() -> void:
 		if bool(od["breakable"]) and int(o["max_hp"]) > 1 and int(o["hp"]) < int(o["max_hp"]):
 			var bw := orad * 2.0
 			var bpos := op + Vector2(-orad, -orad - 10.0)
-			draw_rect(Rect2(bpos, Vector2(bw, 4)), Color("#421c31"))
+			draw_rect(Rect2(bpos, Vector2(bw, 4)), Color("#2A1014"))
 			draw_rect(
 				Rect2(bpos, Vector2(bw * float(o["hp"]) / float(o["max_hp"]), 4)),
-				Color("#6fd8a0")
+				Color("#4A8C82")
 			)
 
 	# 敌方弹幕（v0.21.0）
@@ -3696,8 +3696,8 @@ func _draw() -> void:
 				false, Color.WHITE
 			)
 		else:
-			draw_circle(spos, 7.0, Color("#b45cff"))
-			draw_circle(spos, 4.0, Color("#e0b0ff"))
+			draw_circle(spos, 7.0, Color("#3D3266"))
+			draw_circle(spos, 4.0, Color("#5E3A66"))
 
 	# 妖兽（遍历数组绘制每一只）
 	for e in enemies:
@@ -3719,7 +3719,7 @@ func _draw() -> void:
 			var t := float(e.get("explode_timer", 0.35))
 			var pulse := 1.0 + (0.35 - t) / 0.35 * 0.6
 			draw_size = size * pulse
-			enemy_color = Color("#ff4d4d") if int(t * 20.0) % 2 == 0 else Color.WHITE
+			enemy_color = Color("#D03038") if int(t * 20.0) % 2 == 0 else Color.WHITE
 
 		# 贴图优先（v0.23.0）
 		var etex: Texture2D = tex_enemies.get(str(e["type"]), null) as Texture2D
@@ -3756,23 +3756,23 @@ func _draw() -> void:
 		# 护盾显示（v0.21.0）
 		if int(e.get("shield", 0)) > 0:
 			draw_circle(pos, draw_size * 0.85, Color(0.30, 0.67, 0.97, 0.30))
-			draw_arc(pos, draw_size * 0.85, 0.0, TAU, 24, Color("#4dabf7"), 2.0)
+			draw_arc(pos, draw_size * 0.85, 0.0, TAU, 24, Color("#4A8C82"), 2.0)
 
 		# 血条
 		var bar_width := maxf(54.0, size + 12.0)
 		var bar_pos := pos + Vector2(-bar_width / 2.0, -size / 2.0 - 20.0)
-		draw_rect(Rect2(bar_pos, Vector2(bar_width, 6)), Color("#421c31"))
+		draw_rect(Rect2(bar_pos, Vector2(bar_width, 6)), Color("#2A1014"))
 
 		var hp_ratio := float(e["hp"]) / float(e["max_hp"])
 		draw_rect(
 			Rect2(bar_pos, Vector2(bar_width * hp_ratio, 6)),
-			Color("#f05276")
+			Color("#C42830")
 		)
 
 		# 护盾条（画在血条上方）
 		if int(e.get("shield", 0)) > 0:
 			var sh_ratio := clampf(float(e["shield"]) / maxf(1.0, float(e["max_hp"]) * 0.25), 0.0, 1.0)
-			draw_rect(Rect2(bar_pos + Vector2(0, -6.0), Vector2(bar_width * sh_ratio, 4)), Color("#4dabf7"))
+			draw_rect(Rect2(bar_pos + Vector2(0, -6.0), Vector2(bar_width * sh_ratio, 4)), Color("#4A8C82"))
 
 		# 名字（精英带词条后缀）
 		var display_name: String = str(ENEMY_TYPES[e["type"]]["name"])
@@ -3793,7 +3793,7 @@ func _draw() -> void:
 			HORIZONTAL_ALIGNMENT_CENTER,
 			120,
 			14,
-			Color("#ff9b4a") if e.has("tribulation") else Color("#e8d8ff")
+			Color("#C9A227") if e.has("tribulation") else Color("#F2EDE3")
 		)
 
 	# 阵法（地面光圈）
@@ -3803,12 +3803,12 @@ func _draw() -> void:
 		var flife := float(active_formation["life"])
 		var alpha := clampf(flife / 3.0, 0.15, 0.55)
 
-		var fcolor := Color("#6fd8a0")
+		var fcolor := Color("#4A8C82")
 		match str(active_formation["type"]):
-			"damage": fcolor = Color("#e05a5a")
-			"armor":  fcolor = Color("#6f9fe0")
-			"haste":  fcolor = Color("#e0d06f")
-			"xp":     fcolor = Color("#6fd8a0")
+			"damage": fcolor = Color("#C42830")
+			"armor":  fcolor = Color("#4A8C82")
+			"haste":  fcolor = Color("#C9A227")
+			"xp":     fcolor = Color("#4A8C82")
 
 		# 外圈
 		draw_arc(fpos, frad, 0.0, TAU, 48, Color(fcolor.r, fcolor.g, fcolor.b, alpha), 3.0, true)
@@ -3864,9 +3864,9 @@ func _draw() -> void:
 			false, mod
 		)
 	else:
-		var player_color := Color("#45e5df")
+		var player_color := Color("#4A8C82")
 		if damage_cooldown > 0.0:
-			player_color = Color("#ffffff")
+			player_color = Color("#FFFFFF")
 		draw_rect(
 			Rect2(psp - Vector2.ONE * player_size / 2.0, Vector2.ONE * player_size),
 			player_color
@@ -3882,7 +3882,7 @@ func _draw() -> void:
 		var elem := "none"
 		if i < projectile_elements.size():
 			elem = projectile_elements[i]
-		var pcolor := Color("#42f5ff")
+		var pcolor := Color("#E5C84A")
 		if ELEMENTS.has(elem):
 			pcolor = Color(str(ELEMENTS[elem]["color"]))
 
@@ -3899,7 +3899,7 @@ func _draw() -> void:
 			draw_set_transform(Vector2.ZERO, 0.0, Vector2.ONE)
 		else:
 			draw_line(tail, tip, pcolor, 5.0, true)
-			draw_circle(p, projectile_size, Color("#d5ffff"))
+			draw_circle(p, projectile_size, Color("#FFFFFF"))
 
 	# 玩家生命条
 	draw_string(
@@ -3912,10 +3912,10 @@ func _draw() -> void:
 		Color.WHITE
 	)
 
-	draw_rect(Rect2(Vector2(20, 40), Vector2(180, 10)), Color("#421c31"))
+	draw_rect(Rect2(Vector2(20, 40), Vector2(180, 10)), Color("#2A1014"))
 	draw_rect(
 		Rect2(Vector2(20, 40), Vector2(180.0 * float(player_hp) / float(player_max_hp), 10)),
-		Color("#48df91")
+		Color("#4A8C82")
 	)
 
 	# 修为与等级
@@ -3937,7 +3937,7 @@ func _draw() -> void:
 			HORIZONTAL_ALIGNMENT_LEFT,
 			-1,
 			16,
-			Color("#7fd8ff")
+			Color("#E5C84A")
 		)
 
 	draw_string(
@@ -3964,7 +3964,7 @@ func _draw() -> void:
 		HORIZONTAL_ALIGNMENT_LEFT,
 		-1,
 		20,
-		Color("#ffd76e") if boss_active else Color.WHITE
+		Color("#C9A227") if boss_active else Color.WHITE
 	)
 
 	draw_string(
@@ -3974,7 +3974,7 @@ func _draw() -> void:
 		HORIZONTAL_ALIGNMENT_LEFT,
 		-1,
 		16,
-		Color("#b9f5d7")
+		Color("#F2EDE3")
 	)
 
 	# 场景名（v0.16.0）
@@ -3985,15 +3985,15 @@ func _draw() -> void:
 		HORIZONTAL_ALIGNMENT_LEFT,
 		-1,
 		14,
-		Color("#9ecfff")
+		Color("#E5C84A")
 	)
 
 	# 波次进度条
 	if not boss_active:
-		draw_rect(Rect2(Vector2(screen_size.x - 260.0, 86), Vector2(180, 8)), Color("#421c31"))
+		draw_rect(Rect2(Vector2(screen_size.x - 260.0, 86), Vector2(180, 8)), Color("#2A1014"))
 		draw_rect(
 			Rect2(Vector2(screen_size.x - 260.0, 86), Vector2(180.0 * get_wave_progress(), 8)),
-			Color("#ffd76e")
+			Color("#C9A227")
 		)
 
 	# 当前功法加成
@@ -4007,7 +4007,7 @@ func _draw() -> void:
 		HORIZONTAL_ALIGNMENT_LEFT,
 		-1,
 		16,
-		Color("#b9f5d7")
+		Color("#F2EDE3")
 	)
 
 	draw_string(
@@ -4017,7 +4017,7 @@ func _draw() -> void:
 		HORIZONTAL_ALIGNMENT_LEFT,
 		-1,
 		14,
-		Color("#8aa89e")
+		Color("#9A8A74")
 	)
 
 	# 临时提示
@@ -4029,7 +4029,7 @@ func _draw() -> void:
 			HORIZONTAL_ALIGNMENT_CENTER,
 			200,
 			20,
-			Color("#fff1a8")
+			Color("#E5C84A")
 		)
 
 	# 法器选择界面（金色主题）
@@ -4043,7 +4043,7 @@ func _draw() -> void:
 			HORIZONTAL_ALIGNMENT_CENTER,
 			400,
 			32,
-			Color("#ffd76e")
+			Color("#C9A227")
 		)
 
 		draw_string(
@@ -4053,7 +4053,7 @@ func _draw() -> void:
 			HORIZONTAL_ALIGNMENT_CENTER,
 			400,
 			16,
-			Color("#d4c090")
+			Color("#D9B93A")
 		)
 
 		for i in range(artifact_choices.size()):
@@ -4061,11 +4061,11 @@ func _draw() -> void:
 			var ahev := (i == get_hovered_artifact_index())
 
 			if ahev:
-				draw_rect(ac, Color("#5a4a1a"))
-				draw_rect(ac, Color("#ffd76e"), false, 3.0)
+				draw_rect(ac, Color("#3A322A"))
+				draw_rect(ac, Color("#C9A227"), false, 3.0)
 			else:
-				draw_rect(ac, Color("#3a3010"))
-				draw_rect(ac, Color("#b89a3a"), false, 2.0)
+				draw_rect(ac, Color("#3A322A"))
+				draw_rect(ac, Color("#C9A227"), false, 2.0)
 
 			var art: Dictionary = artifact_choices[i]
 
@@ -4076,7 +4076,7 @@ func _draw() -> void:
 				HORIZONTAL_ALIGNMENT_LEFT,
 				370,
 				18,
-				Color("#ffd76e")
+				Color("#C9A227")
 			)
 
 			draw_string(
@@ -4096,7 +4096,7 @@ func _draw() -> void:
 			HORIZONTAL_ALIGNMENT_CENTER,
 			360,
 			18,
-			Color("#ffd76e")
+			Color("#C9A227")
 		)
 
 	# 劫难奖励界面（暗红主题）
@@ -4110,7 +4110,7 @@ func _draw() -> void:
 			HORIZONTAL_ALIGNMENT_CENTER,
 			400,
 			32,
-			Color("#ff9b4a")
+			Color("#C9A227")
 		)
 
 		draw_string(
@@ -4120,7 +4120,7 @@ func _draw() -> void:
 			HORIZONTAL_ALIGNMENT_CENTER,
 			400,
 			18,
-			Color("#ffd0a0")
+			Color("#D9B93A")
 		)
 
 		for i in range(tribulation_reward_choices.size()):
@@ -4128,11 +4128,11 @@ func _draw() -> void:
 			var rhov := (i == get_hovered_reward_index())
 
 			if rhov:
-				draw_rect(rc, Color("#5a2a1a"))
-				draw_rect(rc, Color("#ff9b4a"), false, 3.0)
+				draw_rect(rc, Color("#2A1014"))
+				draw_rect(rc, Color("#C9A227"), false, 3.0)
 			else:
-				draw_rect(rc, Color("#3a1a12"))
-				draw_rect(rc, Color("#c46a3a"), false, 2.0)
+				draw_rect(rc, Color("#2A1014"))
+				draw_rect(rc, Color("#8B4A28"), false, 2.0)
 
 			var rw: Dictionary = tribulation_reward_choices[i]
 
@@ -4143,7 +4143,7 @@ func _draw() -> void:
 				HORIZONTAL_ALIGNMENT_LEFT,
 				370,
 				18,
-				Color("#ffd0a0")
+				Color("#D9B93A")
 			)
 
 			draw_string(
@@ -4163,7 +4163,7 @@ func _draw() -> void:
 			HORIZONTAL_ALIGNMENT_CENTER,
 			360,
 			18,
-			Color("#ff9b4a")
+			Color("#C9A227")
 		)
 
 	# 升级界面
@@ -4180,7 +4180,7 @@ func _draw() -> void:
 			HORIZONTAL_ALIGNMENT_CENTER,
 			360,
 			26,
-			Color("#ffe9a6")
+			Color("#D9B93A")
 		)
 
 		for i in range(skill_choices.size()):
@@ -4189,11 +4189,11 @@ func _draw() -> void:
 
 			# 悬停时卡片变亮、边框变金色
 			if hovered:
-				draw_rect(card_rect, Color("#3d6f68"))
-				draw_rect(card_rect, Color("#ffe9a6"), false, 3.0)
+				draw_rect(card_rect, Color("#2E2822"))
+				draw_rect(card_rect, Color("#D9B93A"), false, 3.0)
 			else:
-				draw_rect(card_rect, Color("#294d48"))
-				draw_rect(card_rect, Color("#69d9c5"), false, 2.0)
+				draw_rect(card_rect, Color("#2E2822"))
+				draw_rect(card_rect, Color("#4A8C82"), false, 2.0)
 
 			var skill: Dictionary = skill_choices[i]
 			var line_text := str(i + 1) + ". " + str(skill["name"]) + " — " + str(skill["description"])
@@ -4205,7 +4205,7 @@ func _draw() -> void:
 				HORIZONTAL_ALIGNMENT_LEFT,
 				370,
 				17,
-				Color("#fff7d6") if hovered else Color.WHITE
+				Color("#F2EDE3") if hovered else Color.WHITE
 			)
 
 		draw_string(
@@ -4215,7 +4215,7 @@ func _draw() -> void:
 			HORIZONTAL_ALIGNMENT_CENTER,
 			360,
 			18,
-			Color("#ffe9a6")
+			Color("#D9B93A")
 		)
 
 	# 仙道三选一界面（紫色主题，与普通升级区分）
@@ -4232,7 +4232,7 @@ func _draw() -> void:
 			HORIZONTAL_ALIGNMENT_CENTER,
 			440,
 			34,
-			Color("#ffd76e")
+			Color("#C9A227")
 		)
 
 		draw_string(
@@ -4242,7 +4242,7 @@ func _draw() -> void:
 			HORIZONTAL_ALIGNMENT_CENTER,
 			440,
 			20,
-			Color("#e0c8ff")
+			Color("#D8CFC0")
 		)
 
 		draw_string(
@@ -4252,7 +4252,7 @@ func _draw() -> void:
 			HORIZONTAL_ALIGNMENT_CENTER,
 			440,
 			16,
-			Color("#b89ad6")
+			Color("#D8CFC0")
 		)
 
 		for i in range(path_choices.size()):
@@ -4260,11 +4260,11 @@ func _draw() -> void:
 			var hovered := (i == get_hovered_path_index())
 
 			if hovered:
-				draw_rect(card, Color("#3a2050"))
-				draw_rect(card, Color("#ffd76e"), false, 3.0)
+				draw_rect(card, Color("#2E2822"))
+				draw_rect(card, Color("#C9A227"), false, 3.0)
 			else:
-				draw_rect(card, Color("#241433"))
-				draw_rect(card, Color("#8f6bb5"), false, 2.0)
+				draw_rect(card, Color("#1C1814"))
+				draw_rect(card, Color("#5E3A66"), false, 2.0)
 
 			var pc: Dictionary = path_choices[i]
 
@@ -4275,7 +4275,7 @@ func _draw() -> void:
 				HORIZONTAL_ALIGNMENT_LEFT,
 				460,
 				24,
-				Color("#ffd76e") if hovered else Color("#ffe9b0")
+				Color("#C9A227") if hovered else Color("#D9B93A")
 			)
 
 			draw_string(
@@ -4295,7 +4295,7 @@ func _draw() -> void:
 				HORIZONTAL_ALIGNMENT_LEFT,
 				460,
 				14,
-				Color("#b89ad6")
+				Color("#D8CFC0")
 			)
 
 		draw_string(
@@ -4305,7 +4305,7 @@ func _draw() -> void:
 			HORIZONTAL_ALIGNMENT_CENTER,
 			400,
 			18,
-			Color("#ffd76e")
+			Color("#C9A227")
 		)
 
 	# ==========================================
@@ -4325,7 +4325,7 @@ func _draw() -> void:
 		)
 
 		var title := "飞升成仙！" if game_won else "修仙失败！"
-		var title_color := Color("#ffd76e") if game_won else Color("#ff6b83")
+		var title_color := Color("#C9A227") if game_won else Color("#D03038")
 
 		draw_string(
 			ThemeDB.fallback_font,
@@ -4345,7 +4345,7 @@ func _draw() -> void:
 				HORIZONTAL_ALIGNMENT_CENTER,
 				400,
 				20,
-				Color("#ffe9a6")
+				Color("#D9B93A")
 			)
 
 		var mins2 := int(run_time) / 60
@@ -4368,7 +4368,7 @@ func _draw() -> void:
 			HORIZONTAL_ALIGNMENT_CENTER,
 			400,
 			18,
-			Color("#b9f5d7")
+			Color("#F2EDE3")
 		)
 
 		draw_string(
@@ -4378,5 +4378,5 @@ func _draw() -> void:
 			HORIZONTAL_ALIGNMENT_CENTER,
 			400,
 			22,
-			Color("#ffe9a6")
+			Color("#D9B93A")
 		)
