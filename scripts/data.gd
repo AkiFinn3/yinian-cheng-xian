@@ -43,7 +43,111 @@ const ENEMY_TYPES := {
 		"damage": 60,
 		"reward": 1500,
 	},
+	# ---- v0.21.0 新增四种 ----
+	# 邪修：远程发射幽火弹，保持距离不打近身
+	"cultivator": {
+		"name": "邪修",
+		"color": Color("#7b5ea7"),
+		"size": 30.0,
+		"speed": 110.0,
+		"max_hp": 75,
+		"damage": 15,
+		"reward": 55,
+		"ranged": true,
+		"keep_dist": 320.0,
+		"shoot_cd": 2.2,
+		"shoot_damage": 12,
+		"shoot_speed": 260.0,
+	},
+	# 血蛭：死亡时分裂成两只小血蛭
+	"leech": {
+		"name": "血蛭",
+		"color": Color("#a81e3c"),
+		"size": 36.0,
+		"speed": 120.0,
+		"max_hp": 130,
+		"damage": 20,
+		"reward": 45,
+		"split": true,
+		"split_count": 2,
+		"split_hp_ratio": 0.35,
+		"split_size_ratio": 0.6,
+	},
+	# 噬魂蛛：靠近玩家后自爆
+	"spider": {
+		"name": "噬魂蛛",
+		"color": Color("#c46a1f"),
+		"size": 28.0,
+		"speed": 175.0,
+		"max_hp": 60,
+		"damage": 14,
+		"reward": 40,
+		"explode": true,
+		"explode_range": 90.0,
+		"explode_damage": 28,
+		"explode_radius": 130.0,
+	},
+	# 尸巫：持续治疗附近妖兽
+	"healer": {
+		"name": "尸巫",
+		"color": Color("#4a7a5c"),
+		"size": 34.0,
+		"speed": 90.0,
+		"max_hp": 110,
+		"damage": 16,
+		"reward": 70,
+		"heal_aura": true,
+		"heal_range": 260.0,
+		"heal_per_sec": 12,
+	},
 }
+
+# ==========================================
+# 精英词条（v0.21.0）
+# 精英怪随机获得 1-2 个词条，视觉上用不同颜色描边区分
+# ==========================================
+const ELITE_AFFIXES := {
+	"vampire": {
+		"name": "吸血",
+		"desc": "造成伤害时回复等量生命",
+		"color": Color("#d63384"),
+		"weight": 20,
+	},
+	"shield": {
+		"name": "护盾",
+		"desc": "每隔 5 秒获得一层吸收护盾",
+		"color": Color("#4dabf7"),
+		"weight": 20,
+	},
+	"berserk": {
+		"name": "狂暴",
+		"desc": "生命低于 40% 时移速与伤害翻倍",
+		"color": Color("#ff6b35"),
+		"weight": 18,
+	},
+	"swift": {
+		"name": "疾行",
+		"desc": "移速 +60%",
+		"color": Color("#94d82d"),
+		"weight": 16,
+	},
+	"thorns": {
+		"name": "荆棘",
+		"desc": "受到近战伤害时反弹 30%",
+		"color": Color("#e8590c"),
+		"weight": 14,
+	},
+	"regen": {
+		"name": "再生",
+		"desc": "每秒回复 1.5% 最大生命",
+		"color": Color("#51cf66"),
+		"weight": 14,
+	},
+}
+
+# 精英可获得词条数量范围
+const ELITE_AFFIX_MIN := 1
+const ELITE_AFFIX_MAX := 2
 const ELEMENTS := {
 	"none":    {"name": "",       "color": "#42f5ff"},
 	"fire":    {"name": "烈焰",   "color": "#ff6b35"},

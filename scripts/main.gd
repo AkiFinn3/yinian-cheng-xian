@@ -12,6 +12,9 @@ const ELITE_HP_MUL := Data.ELITE_HP_MUL
 const ELITE_DMG_MUL := Data.ELITE_DMG_MUL
 const ELITE_SIZE_MUL := Data.ELITE_SIZE_MUL
 const ELITE_REWARD_MUL := Data.ELITE_REWARD_MUL
+const ELITE_AFFIXES := Data.ELITE_AFFIXES
+const ELITE_AFFIX_MIN := Data.ELITE_AFFIX_MIN
+const ELITE_AFFIX_MAX := Data.ELITE_AFFIX_MAX
 const TRIBULATIONS := Data.TRIBULATIONS
 const LATE_TRIBULATIONS := Data.LATE_TRIBULATIONS
 const TRIBULATION_REWARDS := Data.TRIBULATION_REWARDS
@@ -149,6 +152,9 @@ var menu_selection: int = 0            # 主菜单当前高亮项
 var pause_selection: int = 0           # 暂停菜单当前高亮项
 
 # 障碍物（v0.16.0）：按世界格哈希生成，走到哪生成到哪
+# 敌方弹幕（v0.21.0：邪修远程攻击）
+var enemy_shots: Array = []
+
 var obstacles: Array = []
 var obstacle_cells: Dictionary = {}     # 已生成过的格子，避免重复
 
@@ -336,6 +342,7 @@ func _process(delta: float) -> void:
 	update_obstacles(delta)
 	update_enemies(delta)
 	update_projectiles(delta)
+	update_enemy_shots(delta)
 	update_orbs(delta)
 	update_formation(delta)
 	update_auto_attack()
@@ -424,9 +431,99 @@ func update_enemies(delta: float) -> void:
 		var direction: Vector2 = player_pos - e["pos"]
 		var distance := direction.length()
 
+		# ===== 精英词条结算（v0.21.0）=====
+		var affixes: Array = e.get("affixes", [])
+		var etype_data: Dictionary = ENEMY_TYPES[e["type"]]
+
+		# 再生：每秒回 1.5% 最大生命
+		if affixes.has("regen") and int(e["hp"]) < int(e["max_hp"]):
+			e["regen_accum"] = float(e.get("regen_accum", 0.0)) + float(e["max_hp"]) * 0.015 * delta
+			if float(e["regen_accum"]) >= 1.0:
+				var heal := int(float(e["regen_accum"]))
+				e["regen_accum"] = float(e["regen_accum"]) - float(heal)
+				e["hp"] = mini(int(e["max_hp"]), int(e["hp"]) + heal)
+
+		# 护盾：每 5 秒补一层（25% 最大生命）
+		if affixes.has("shield"):
+			e["shield_timer"] = float(e.get("shield_timer", 0.0)) - delta
+			if float(e["shield_timer"]) <= 0.0:
+				e["shield_timer"] = 5.0
+				e["shield"] = int(float(e["max_hp"]) * 0.25)
+
+		# 狂暴：生命低于 40% 时速度翻倍（伤害在接触时计算）
+		var berserk_mul := 1.0
+		if affixes.has("berserk") and float(e["hp"]) / float(e["max_hp"]) < 0.4:
+			berserk_mul = 2.0
+
+		# ===== 尸巫：治疗附近妖兽（v0.21.0）=====
+		if bool(etype_data.get("heal_aura", false)):
+			var heal_range := float(etype_data["heal_range"])
+			var heal_amt := float(etype_data["heal_per_sec"]) * delta
+			for other in enemies:
+				if other == e:
+					continue
+				if (other["pos"] as Vector2).distance_to(e["pos"]) <= heal_range:
+					if int(other["hp"]) < int(other["max_hp"]):
+						other["hp"] = mini(int(other["max_hp"]), int(other["hp"]) + maxi(1, int(heal_amt)))
+
+		# ===== 邪修：保持距离并远程攻击（v0.21.0）=====
+		var is_ranged := bool(etype_data.get("ranged", false))
+		var keep_dist := float(etype_data.get("keep_dist", 320.0))
+
+		if is_ranged:
+			e["shoot_timer"] = float(e.get("shoot_timer", 2.0)) - delta
+			if float(e["shoot_timer"]) <= 0.0 and distance <= 600.0:
+				e["shoot_timer"] = float(etype_data["shoot_cd"])
+				# 发射幽火弹
+				var dir_shot: Vector2 = direction.normalized()
+				enemy_shots.append({
+					"pos": e["pos"] + dir_shot * float(e["size"]) / 2.0,
+					"dir": dir_shot,
+					"speed": float(etype_data["shoot_speed"]),
+					"damage": int(etype_data["shoot_damage"]),
+					"life": 3.0,
+				})
+				play_sfx("hit")
+
+		# ===== 噬魂蛛：靠近就自爆（v0.21.0）=====
+		if bool(etype_data.get("explode", false)) and not bool(e.get("exploding", false)):
+			if distance <= float(etype_data["explode_range"]):
+				e["exploding"] = true
+				e["explode_timer"] = 0.35
+				e["speed"] = 0.0
+
+		if bool(e.get("exploding", false)):
+			e["explode_timer"] = float(e.get("explode_timer", 0.35)) - delta
+			if float(e["explode_timer"]) <= 0.0:
+				# 爆炸伤害
+				var blast_r := float(etype_data["explode_radius"])
+				if distance <= blast_r and invincible_timer <= 0.0:
+					var blast_dmg := int(etype_data["explode_damage"])
+					var red := clampf(damage_reduction, 0.0, 0.7)
+					var real := maxi(1, int(round(float(blast_dmg) * (1.0 - red))))
+					player_hp -= real
+					invincible_timer = 0.8
+					message_text = "自爆伤害 -" + str(real)
+					message_timer = 0.5
+					play_sfx("hurt")
+					if player_hp <= 0:
+						player_hp = 0
+						is_game_over = true
+						play_sfx("lose")
+				# 自爆死亡不给奖励（防止刷修为）
+				enemies.remove_at(i)
+				continue
+
 		var frozen := (e.has("frozen") and float(e["frozen"]) > 0.0)
 		if distance > 0.001 and not frozen:
-			var next_pos: Vector2 = e["pos"] + direction.normalized() * float(e["speed"]) * speed_mul * delta
+			var move_speed := float(e["speed"]) * speed_mul * berserk_mul
+			# 邪修：太近就后退，太远就靠近
+			if is_ranged:
+				if distance < keep_dist * 0.7:
+					move_speed = -move_speed * 0.8      # 后退
+				elif distance < keep_dist:
+					move_speed = 0.0                    # 站桩输出
+			var next_pos: Vector2 = e["pos"] + direction.normalized() * move_speed * delta
 			# 妖兽也绕不开障碍物，会被卡住（贴边滑）
 			e["pos"] = push_out_of_obstacles(next_pos, float(e["size"]) / 2.0)
 
@@ -434,6 +531,10 @@ func update_enemies(delta: float) -> void:
 
 		if distance < contact_distance and damage_cooldown <= 0.0 and invincible_timer <= 0.0:
 			var enemy_damage: int = int(e.get("damage", ENEMY_TYPES[e["type"]]["damage"]))
+			# 狂暴词条：低血时伤害翻倍（v0.21.0）
+			if (e.get("affixes", []) as Array).has("berserk") \
+					and float(e["hp"]) / float(e["max_hp"]) < 0.4:
+				enemy_damage = int(float(enemy_damage) * 2.0)
 			var reduction: float = clampf(damage_reduction, 0.0, 0.7)
 
 			# 不灭灯：生命低于 30% 时额外减伤
@@ -449,6 +550,10 @@ func update_enemies(delta: float) -> void:
 			message_text = "受到伤害 -" + str(actual_damage)
 			message_timer = 0.5
 			play_sfx("hurt")
+
+			# 精英吸血词条：回复等量生命（v0.21.0）
+			if (e.get("affixes", []) as Array).has("vampire"):
+				e["hp"] = mini(int(e["max_hp"]), int(e["hp"]) + actual_damage)
 
 			if player_hp <= 0:
 				player_hp = 0
@@ -514,6 +619,37 @@ func fire_sword_energy(direction: Vector2) -> void:
 # ==========================================
 # 剑气飞行、命中与消失
 # ==========================================
+
+# 敌方弹幕更新（v0.21.0）
+func update_enemy_shots(delta: float) -> void:
+	for i in range(enemy_shots.size() - 1, -1, -1):
+		var shot: Dictionary = enemy_shots[i]
+		shot["life"] = float(shot["life"]) - delta
+		shot["pos"] = (shot["pos"] as Vector2) + (shot["dir"] as Vector2) * float(shot["speed"]) * delta
+
+		# 命中玩家
+		var hit_r := player_size / 2.0 + 8.0
+		if (shot["pos"] as Vector2).distance_to(player_pos) <= hit_r:
+			if invincible_timer <= 0.0:
+				var red := clampf(damage_reduction, 0.0, 0.7)
+				red = clampf(red + get_formation_bonus("armor") / 100.0, 0.0, 0.9)
+				var real := maxi(1, int(round(float(shot["damage"]) * (1.0 - red))))
+				player_hp -= real
+				invincible_timer = 0.5
+				message_text = "幽火伤害 -" + str(real)
+				message_timer = 0.5
+				play_sfx("hurt")
+				if player_hp <= 0:
+					player_hp = 0
+					is_game_over = true
+					play_sfx("lose")
+			enemy_shots.remove_at(i)
+			continue
+
+		# 超时或飞太远
+		if float(shot["life"]) <= 0.0 or (shot["pos"] as Vector2).distance_to(player_pos) > 1400.0:
+			enemy_shots.remove_at(i)
+
 
 func update_projectiles(delta: float) -> void:
 	for i in range(projectile_positions.size() - 1, -1, -1):
@@ -591,9 +727,36 @@ func apply_hit(index: int, damage: int, is_critical: bool, element: String) -> v
 		return
 
 	var e: Dictionary = enemies[index]
-	e["hp"] = int(e["hp"]) - damage
+
+	# ===== 精英护盾吸收（v0.21.0）=====
+	var remain := damage
+	if int(e.get("shield", 0)) > 0:
+		var shield_hp := int(e["shield"])
+		if shield_hp >= remain:
+			e["shield"] = shield_hp - remain
+			remain = 0
+			message_text = "护盾抵挡"
+			message_timer = 0.5
+		else:
+			remain -= shield_hp
+			e["shield"] = 0
+			message_text = "护盾破碎"
+			message_timer = 0.5
+
+	if remain > 0:
+		e["hp"] = int(e["hp"]) - remain
 	e["hit_flash"] = 0.12
 	play_sfx("crit" if is_critical else "hit")
+
+	# 精英荆棘词条：反弹 30% 伤害给玩家（v0.21.0）
+	if (e.get("affixes", []) as Array).has("thorns") and remain > 0 and invincible_timer <= 0.0:
+		var reflect := maxi(1, int(round(float(remain) * 0.3)))
+		player_hp -= reflect
+		invincible_timer = 0.25
+		if player_hp <= 0:
+			player_hp = 0
+			is_game_over = true
+			play_sfx("lose")
 
 	# 元素效果
 	match element:
@@ -611,12 +774,12 @@ func apply_hit(index: int, damage: int, is_critical: bool, element: String) -> v
 			if randf() < 0.20:
 				chain_thunder(index, damage)
 
-	if is_critical:
-		message_text = "暴击！伤害 -" + str(damage)
-	else:
-		message_text = "剑气命中 -" + str(damage)
-
-	message_timer = 0.6
+	if remain > 0:
+		if is_critical:
+			message_text = "暴击！伤害 -" + str(remain)
+		else:
+			message_text = "剑气命中 -" + str(remain)
+		message_timer = 0.6
 
 	# 首领阶段推进
 	if str(e["type"]) == "boss" and int(e["hp"]) > 0:
@@ -923,6 +1086,32 @@ func kill_enemy(index: int) -> void:
 	var is_boss: bool = (str(e["type"]) == "boss")
 
 	var drop_pos: Vector2 = e["pos"]
+	var etype: Dictionary = ENEMY_TYPES[e["type"]]
+
+	# ===== 血蛭分裂（v0.21.0）=====
+	# 分裂出的小血蛭不再分裂（用 no_split 标记），避免无限分裂
+	if bool(etype.get("split", false)) and not bool(e.get("no_split", false)):
+		var cnt := int(etype["split_count"])
+		var hp_ratio := float(etype["split_hp_ratio"])
+		var size_ratio := float(etype["split_size_ratio"])
+		for k in range(cnt):
+			var angle := TAU * float(k) / float(cnt) + randf() * 0.5
+			var offset := Vector2(cos(angle), sin(angle)) * 40.0
+			var child := {
+				"type": e["type"],
+				"pos": drop_pos + offset,
+				"speed": float(e["speed"]) * 1.15,
+				"size": float(e["size"]) * size_ratio,
+				"max_hp": maxi(1, int(float(e["max_hp"]) * hp_ratio)),
+				"hp": maxi(1, int(float(e["max_hp"]) * hp_ratio)),
+				"hit_flash": 0.0,
+				"elite": false,
+				"damage": maxi(1, int(float(e["damage"]) * 0.6)),
+				"reward": maxi(1, int(float(reward) * 0.25)),
+				"affixes": [] as Array[String],
+				"no_split": true,
+			}
+			enemies.append(child)
 
 	enemies.remove_at(index)
 	kill_count += 1
@@ -984,21 +1173,91 @@ func kill_enemy(index: int) -> void:
 
 
 # 按等级加权随机选择妖兽类型
+# 按境界加权随机选择妖兽类型（v0.21.0：新增 4 种，按境界解锁）
 func pick_enemy_type() -> String:
 	var level_bonus: int = mini(get_progress(), 6)
 
-	var golem_weight: int = mini(15 + level_bonus * 5, 45)
-	var bird_weight: int = mini(30 + level_bonus * 2, 40)
-	var wolf_weight: int = maxi(100 - golem_weight - bird_weight, 10)
+	# 基础三种：始终存在
+	var golem_weight: int = mini(15 + level_bonus * 4, 35)
+	var bird_weight: int = mini(30 + level_bonus * 2, 36)
+	var wolf_weight: int = maxi(100 - golem_weight - bird_weight, 12)
 
-	var total: int = golem_weight + bird_weight + wolf_weight
+	# 新妖兽按境界门槛解锁
+	var cultivator_weight := 0
+	var leech_weight := 0
+	var spider_weight := 0
+	var healer_weight := 0
+
+	var prog := get_progress()
+	if prog >= 3:                       # 筑基起
+		cultivator_weight = mini(8 + level_bonus * 3, 22)
+	if prog >= 6:                       # 炼精起
+		leech_weight = mini(6 + level_bonus * 2, 16)
+	if prog >= 9:                       # 化炁起
+		spider_weight = mini(6 + level_bonus * 2, 16)
+	if prog >= 12:                      # 炼炁起
+		healer_weight = mini(4 + level_bonus, 12)
+
+	# 新怪占用基础三种的权重空间，按比例压缩
+	var new_total := cultivator_weight + leech_weight + spider_weight + healer_weight
+	if new_total > 0:
+		var keep := maxf(0.45, 1.0 - float(new_total) / 100.0)
+		wolf_weight = maxi(8, int(float(wolf_weight) * keep))
+		bird_weight = maxi(6, int(float(bird_weight) * keep))
+		golem_weight = maxi(6, int(float(golem_weight) * keep))
+
+	var total: int = wolf_weight + bird_weight + golem_weight \
+		+ cultivator_weight + leech_weight + spider_weight + healer_weight
 	var roll: int = randi_range(1, total)
 
 	if roll <= wolf_weight:
 		return "wolf"
-	if roll <= wolf_weight + bird_weight:
+	roll -= wolf_weight
+	if roll <= bird_weight:
 		return "bird"
-	return "golem"
+	roll -= bird_weight
+	if roll <= golem_weight:
+		return "golem"
+	roll -= golem_weight
+	if roll <= cultivator_weight:
+		return "cultivator"
+	roll -= cultivator_weight
+	if roll <= leech_weight:
+		return "leech"
+	roll -= leech_weight
+	if roll <= spider_weight:
+		return "spider"
+	return "healer"
+
+
+# 随机抽精英词条（1-2 个，不重复）
+func roll_elite_affixes() -> Array[String]:
+	var out: Array[String] = []
+	var count := randi_range(ELITE_AFFIX_MIN, ELITE_AFFIX_MAX)
+
+	var pool: Array[String] = []
+	for key in ELITE_AFFIXES.keys():
+		pool.append(str(key))
+
+	for i in range(count):
+		if pool.is_empty():
+			break
+		# 按权重抽
+		var total := 0
+		for key in pool:
+			total += int(ELITE_AFFIXES[key]["weight"])
+		var roll := randi_range(1, total)
+		var picked := pool[0]
+		var acc := 0
+		for key in pool:
+			acc += int(ELITE_AFFIXES[key]["weight"])
+			if roll <= acc:
+				picked = key
+				break
+		out.append(picked)
+		pool.erase(picked)
+
+	return out
 
 
 # 生成一只妖兽并加入数组
@@ -1040,7 +1299,7 @@ func spawn_enemy(elite: bool = false) -> void:
 		reward = int(reward * ELITE_REWARD_MUL)
 		damage = int(damage * ELITE_DMG_MUL)
 
-	enemies.append({
+	var entry := {
 		"type": type_name,
 		"pos": pos,
 		"speed": speed,
@@ -1051,7 +1310,30 @@ func spawn_enemy(elite: bool = false) -> void:
 		"elite": elite,
 		"damage": damage,
 		"reward": reward,
-	})
+	}
+
+	# 新妖兽专属字段（v0.21.0）
+	if data.has("ranged"):
+		entry["shoot_timer"] = randf_range(0.5, float(data["shoot_cd"]))
+	if data.has("explode"):
+		entry["exploding"] = false
+	if data.has("heal_aura"):
+		entry["heal_timer"] = 0.0
+
+	# 精英词条（v0.21.0）
+	if elite:
+		entry["affixes"] = roll_elite_affixes()
+		# 疾行词条直接改速度
+		if (entry["affixes"] as Array).has("swift"):
+			entry["speed"] = float(entry["speed"]) * 1.6
+		# 护盾词条初始给一层
+		if (entry["affixes"] as Array).has("shield"):
+			entry["shield"] = int(float(max_hp) * 0.25)
+			entry["shield_timer"] = 5.0
+	else:
+		entry["affixes"] = [] as Array[String]
+
+	enemies.append(entry)
 
 
 # 生成首领（单独一只，不补普通妖兽）
@@ -3096,6 +3378,7 @@ func restart_game() -> void:
 	skill_choices.clear()
 	learned_skills.clear()
 
+	enemy_shots.clear()
 	projectile_positions.clear()
 	projectile_directions.clear()
 	projectile_damages.clear()
@@ -3349,6 +3632,12 @@ func _draw() -> void:
 				Color("#6fd8a0")
 			)
 
+	# 敌方弹幕（v0.21.0）
+	for shot in enemy_shots:
+		var spos: Vector2 = w2s(shot["pos"])
+		draw_circle(spos, 7.0, Color("#b45cff"))
+		draw_circle(spos, 4.0, Color("#e0b0ff"))
+
 	# 妖兽（遍历数组绘制每一只）
 	for e in enemies:
 		var pos: Vector2 = w2s(e["pos"])
@@ -3363,10 +3652,33 @@ func _draw() -> void:
 		if float(e["hit_flash"]) > 0.0:
 			enemy_color = Color.WHITE
 
+		# 自爆预警：闪烁放大（v0.21.0）
+		var draw_size := size
+		if bool(e.get("exploding", false)):
+			var t := float(e.get("explode_timer", 0.35))
+			var pulse := 1.0 + (0.35 - t) / 0.35 * 0.6
+			draw_size = size * pulse
+			enemy_color = Color("#ff4d4d") if int(t * 20.0) % 2 == 0 else Color.WHITE
+
 		draw_rect(
-			Rect2(pos - Vector2.ONE * size / 2.0, Vector2.ONE * size),
+			Rect2(pos - Vector2.ONE * draw_size / 2.0, Vector2.ONE * draw_size),
 			enemy_color
 		)
+
+		# 精英词条描边（v0.21.0）
+		var affix_list: Array = e.get("affixes", [])
+		if not affix_list.is_empty():
+			var ring_color: Color = ELITE_AFFIXES[str(affix_list[0])]["color"]
+			draw_rect(
+				Rect2(pos - Vector2.ONE * draw_size / 2.0 - Vector2.ONE * 3.0,
+					Vector2.ONE * draw_size + Vector2.ONE * 6.0),
+				ring_color, false, 2.0
+			)
+
+		# 护盾显示（v0.21.0）
+		if int(e.get("shield", 0)) > 0:
+			draw_circle(pos, draw_size * 0.85, Color(0.30, 0.67, 0.97, 0.30))
+			draw_arc(pos, draw_size * 0.85, 0.0, TAU, 24, Color("#4dabf7"), 2.0)
 
 		# 血条
 		var bar_width := maxf(54.0, size + 12.0)
@@ -3379,13 +3691,29 @@ func _draw() -> void:
 			Color("#f05276")
 		)
 
-		# 名字
+		# 护盾条（画在血条上方）
+		if int(e.get("shield", 0)) > 0:
+			var sh_ratio := clampf(float(e["shield"]) / maxf(1.0, float(e["max_hp"]) * 0.25), 0.0, 1.0)
+			draw_rect(Rect2(bar_pos + Vector2(0, -6.0), Vector2(bar_width * sh_ratio, 4)), Color("#4dabf7"))
+
+		# 名字（精英带词条后缀）
+		var display_name: String = str(ENEMY_TYPES[e["type"]]["name"])
+		if e.has("tribulation"):
+			display_name = "劫·" + display_name
+		var affix_names := ""
+		for a in (e.get("affixes", []) as Array):
+			if not affix_names.is_empty():
+				affix_names += "·"
+			affix_names += str(ELITE_AFFIXES[str(a)]["name"])
+		if not affix_names.is_empty():
+			display_name = display_name + "【" + affix_names + "】"
+
 		draw_string(
 			ThemeDB.fallback_font,
-			pos + Vector2(-30.0, -size / 2.0 - 26.0),
-			(str(ENEMY_TYPES[e["type"]]["name"]) if not e.has("tribulation") else "劫·" + str(ENEMY_TYPES[e["type"]]["name"])),
+			pos + Vector2(-45.0, -size / 2.0 - 26.0),
+			display_name,
 			HORIZONTAL_ALIGNMENT_CENTER,
-			90,
+			120,
 			14,
 			Color("#ff9b4a") if e.has("tribulation") else Color("#e8d8ff")
 		)
