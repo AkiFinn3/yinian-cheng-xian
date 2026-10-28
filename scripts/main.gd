@@ -936,10 +936,20 @@ func spawn_enemy(elite: bool = false) -> void:
 	var type_name: String = pick_enemy_type()
 	var data: Dictionary = ENEMY_TYPES[type_name]
 
-	# 无限地图：在玩家周围环形生成（视野外）
-	var angle := randf() * TAU
-	var radius := maxf(screen_size.x, screen_size.y) * 0.75 + randf_range(0.0, 150.0)
-	var pos: Vector2 = player_pos + Vector2(cos(angle), sin(angle)) * radius
+	# 在屏幕内随机位置生成（避开玩家周围的安全区）
+	var margin := 70.0
+	var safe_radius := 180.0   # 不在玩家身边直接刷出来
+	var pos := Vector2.ZERO
+
+	for attempt in range(20):
+		var screen_x := randf_range(margin, screen_size.x - margin)
+		var screen_y := randf_range(margin, screen_size.y - margin)
+		var candidate := s2w(Vector2(screen_x, screen_y))
+
+		if candidate.distance_to(player_pos) >= safe_radius:
+			pos = candidate
+			break
+		pos = candidate   # 兜底：最后一次结果
 
 	var max_hp: int = int(data["max_hp"])
 	var size: float = float(data["size"])
