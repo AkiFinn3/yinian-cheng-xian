@@ -276,6 +276,12 @@ func _process(delta: float) -> void:
 
 	run_time += delta
 
+	# 自动存档：每 15 秒一次（只在安全状态才真的写盘）
+	save_timer += delta
+	if save_timer >= AUTOSAVE_INTERVAL:
+		save_timer = 0.0
+		save_game()
+
 	damage_cooldown = maxf(0.0, damage_cooldown - delta)
 	sword_cooldown = maxf(0.0, sword_cooldown - delta)
 	invincible_timer = maxf(0.0, invincible_timer - delta)
@@ -1942,9 +1948,9 @@ func _unhandled_input(event: InputEvent) -> void:
 		if event is InputEventKey and event.pressed and not event.echo:
 			match event.keycode:
 				KEY_UP, KEY_W:
-					pause_selection = (pause_selection + 1) % 2
+					pause_selection = (pause_selection + 2) % 3
 				KEY_DOWN, KEY_S:
-					pause_selection = (pause_selection + 1) % 2
+					pause_selection = (pause_selection + 1) % 3
 				KEY_ENTER, KEY_KP_ENTER:
 					select_pause_menu(pause_selection)
 				KEY_ESCAPE:
@@ -2021,7 +2027,7 @@ func _unhandled_input(event: InputEvent) -> void:
 # 主菜单与暂停（v0.17.0）
 # ==========================================
 
-# 主菜单选项：0 开始游戏 / 1 继续上次 / 2 退出
+# 主菜单选项：0 开始游戏 / 1 继续游戏 / 2 退出
 func select_main_menu(index: int) -> void:
 	match index:
 		0:
@@ -2029,20 +2035,34 @@ func select_main_menu(index: int) -> void:
 			is_paused = false
 			restart_game()
 		1:
-			# 暂无存档系统，先按新开处理
 			in_main_menu = false
 			is_paused = false
-			restart_game()
+			if not load_game():
+				# 没有存档或存档损坏 → 按新开处理
+				restart_game()
+				message_text = "未找到存档，已重新开始"
+				message_timer = 2.0
 		2:
 			get_tree().quit()
 
 
+# 暂停选项：0 继续 / 1 保存进度 / 2 返回主菜单
 func select_pause_menu(index: int) -> void:
 	match index:
 		0:
 			is_paused = false
 		1:
+			# 手动保存（暂停中也能存，先临时放开暂停标记）
 			is_paused = false
+			var ok := save_game()
+			is_paused = true
+			message_text = "进度已保存" if ok else "当前状态无法保存"
+			message_timer = 2.0
+			pause_selection = 0
+		2:
+			# 返回主菜单前自动存一次
+			is_paused = false
+			save_game()
 			in_main_menu = true
 
 
@@ -2078,7 +2098,7 @@ func get_pause_item_rect(index: int) -> Rect2:
 
 
 func get_pause_index_at(pos: Vector2) -> int:
-	for i in range(2):
+	for i in range(3):
 		if get_pause_item_rect(i).has_point(pos):
 			return i
 	return -1
@@ -2111,17 +2131,30 @@ func draw_main_menu() -> void:
 
 	var labels := ["开始游戏", "继续游戏", "退出"]
 	var hovered := get_hovered_menu_index()
+	var info := get_save_info()
+	var has_saved := not info.is_empty()
 
 	for i in range(3):
 		var rect := get_menu_item_rect(i)
 		var is_hover := (i == hovered) or (i == menu_selection and hovered < 0)
+		# 没有存档时「继续游戏」变灰
+		var disabled := (i == 1 and not has_saved)
 
-		if is_hover:
+		if disabled:
+			draw_rect(rect, Color("#121a16"))
+			draw_rect(rect, Color("#2a3d33"), false, 1.0)
+		elif is_hover:
 			draw_rect(rect, Color("#1e3a2e"))
 			draw_rect(rect, Color("#ffd76e"), false, 2.0)
 		else:
 			draw_rect(rect, Color("#16261f"))
 			draw_rect(rect, Color("#3f6b55"), false, 1.0)
+
+		var label_color := Color("#c8e8d8")
+		if disabled:
+			label_color = Color("#3f5a4b")
+		elif is_hover:
+			label_color = Color("#ffd76e")
 
 		draw_string(
 			ThemeDB.fallback_font,
@@ -2130,7 +2163,19 @@ func draw_main_menu() -> void:
 			HORIZONTAL_ALIGNMENT_CENTER,
 			rect.size.x,
 			22,
-			Color("#ffd76e") if is_hover else Color("#c8e8d8")
+			label_color
+		)
+
+	# 存档摘要（显示在「继续游戏」下方）
+	if has_saved:
+		draw_string(
+			ThemeDB.fallback_font,
+			Vector2(0, get_menu_item_rect(2).position.y + get_menu_item_rect(2).size.y + 34.0),
+			"存档：" + str(info.get("label", "?")) + "     " + str(info.get("saved_at", "")),
+			HORIZONTAL_ALIGNMENT_CENTER,
+			screen_size.x,
+			14,
+			Color("#6f9f85")
 		)
 
 	draw_string(
@@ -2158,10 +2203,10 @@ func draw_pause_menu() -> void:
 		Color("#ffd76e")
 	)
 
-	var labels := ["继续游戏", "返回主菜单"]
+	var labels := ["继续游戏", "保存进度", "返回主菜单"]
 	var hovered := get_hovered_pause_index()
 
-	for i in range(2):
+	for i in range(3):
 		var rect := get_pause_item_rect(i)
 		var is_hover := (i == hovered) or (i == pause_selection and hovered < 0)
 
@@ -2201,6 +2246,197 @@ func get_hovered_menu_index() -> int:
 func get_hovered_pause_index() -> int:
 	var mouse := get_viewport().get_mouse_position()
 	return get_pause_index_at(mouse)
+
+
+# ==========================================
+# 存档系统（v0.18.0）
+# 单槽位 JSON，存在 user://save.json
+# 只存「安全点」：升级/劫难/仙道界面中不存，避免读到半截状态
+# 妖兽、晶石、剑气、障碍物属于临时状态，不存档；读档后按当前境界重新生成
+# ==========================================
+
+const SAVE_PATH := "user://save.json"
+const SAVE_VERSION := 1
+const AUTOSAVE_INTERVAL := 15.0
+
+var save_timer: float = 0.0
+
+
+func has_save() -> bool:
+	return FileAccess.file_exists(SAVE_PATH)
+
+
+# 读取存档摘要（不加载整局游戏，只给主菜单显示用）
+func get_save_info() -> Dictionary:
+	if not has_save():
+		return {}
+	var file := FileAccess.open(SAVE_PATH, FileAccess.READ)
+	if file == null:
+		return {}
+	var text := file.get_as_text()
+	file.close()
+	var parsed = JSON.parse_string(text)
+	if typeof(parsed) != TYPE_DICTIONARY:
+		return {}
+	return parsed
+
+
+func delete_save() -> void:
+	if has_save():
+		DirAccess.remove_absolute(SAVE_PATH)
+
+
+# JSON 数组 → 字符串数组（JSON 读回来是普通 Array，不能直接赋给 Array[String]）
+func to_string_array(value) -> Array[String]:
+	var out: Array[String] = []
+	if value is Array:
+		for item in value:
+			out.append(str(item))
+	return out
+
+
+func save_game() -> bool:
+	# 只在安全时机存档
+	if in_main_menu or is_paused or is_game_over:
+		return false
+	if upgrade_pending or path_choice_pending or tribulation_reward_pending \
+			or artifact_drop_pending or tribulation_pending or boss_active:
+		return false
+
+	var data := {
+		"version": SAVE_VERSION,
+		"saved_at": Time.get_datetime_string_from_system(),
+		"label": get_full_realm_name() + " · 第" + str(wave) + "波",
+		"player": {
+			"pos": [player_pos.x, player_pos.y],
+			"max_hp": player_max_hp,
+			"hp": player_hp,
+		},
+		"progress": {
+			"kill_count": kill_count,
+			"cultivation": cultivation,
+			"realm_index": realm_index,
+			"stage_index": stage_index,
+			"immortal_path": immortal_path,
+			"immortal_stage": immortal_stage,
+			"tribulation_count": tribulation_count,
+		},
+		"stats": {
+			"sword_bonus": sword_bonus,
+			"damage_reduction": damage_reduction,
+			"speed_bonus": speed_bonus,
+			"crit_bonus": crit_bonus,
+			"hp_regen": hp_regen,
+			"attack_interval": attack_interval,
+			"attack_range": attack_range,
+			"sword_element": sword_element,
+			"extra_shots": extra_shots,
+			"pierce": pierce,
+		},
+		"items": {
+			"talisman_bag": talisman_bag,
+			"selected_talisman": selected_talisman,
+			"unlocked_sword": unlocked_sword,
+			"formation_bag": formation_bag,
+			"artifacts": artifacts,
+			"xp_bonus": xp_bonus,
+			"kill_heal": kill_heal,
+			"low_hp_armor": low_hp_armor,
+			"crit_dmg_bonus": crit_dmg_bonus,
+		},
+		"skills": learned_skills,
+		"session": {
+			"wave": wave,
+			"wave_kills": wave_kills,
+			"run_time": run_time,
+			"distance_traveled": distance_traveled,
+		},
+	}
+
+	var file := FileAccess.open(SAVE_PATH, FileAccess.WRITE)
+	if file == null:
+		return false
+	file.store_string(JSON.stringify(data, "\t"))
+	file.close()
+	return true
+
+
+func load_game() -> bool:
+	if not has_save():
+		return false
+
+	var file := FileAccess.open(SAVE_PATH, FileAccess.READ)
+	if file == null:
+		return false
+	var text := file.get_as_text()
+	file.close()
+
+	var parsed = JSON.parse_string(text)
+	if typeof(parsed) != TYPE_DICTIONARY:
+		return false
+	var data: Dictionary = parsed
+
+	# 版本不匹配直接放弃（避免读到旧格式导致状态错乱）
+	if int(data.get("version", 0)) != SAVE_VERSION:
+		return false
+
+	restart_game()   # 先回到干净状态，再覆盖
+
+	var p: Dictionary = data.get("player", {})
+	var pos_arr = p.get("pos", [0, 0])
+	if pos_arr is Array and pos_arr.size() >= 2:
+		player_pos = Vector2(float(pos_arr[0]), float(pos_arr[1]))
+	player_max_hp = maxi(1, int(p.get("max_hp", 100)))
+	player_hp = clampi(int(p.get("hp", player_max_hp)), 1, player_max_hp)
+
+	var pr: Dictionary = data.get("progress", {})
+	kill_count = maxi(0, int(pr.get("kill_count", 0)))
+	cultivation = maxi(0, int(pr.get("cultivation", 0)))
+	realm_index = clampi(int(pr.get("realm_index", 0)), 0, REALMS.size() - 1)
+	stage_index = clampi(int(pr.get("stage_index", 0)), 0, 2)
+	immortal_path = str(pr.get("immortal_path", ""))
+	immortal_stage = clampi(int(pr.get("immortal_stage", 0)), 0, 3)
+	tribulation_count = maxi(0, int(pr.get("tribulation_count", 0)))
+
+	var st: Dictionary = data.get("stats", {})
+	sword_bonus = int(st.get("sword_bonus", 0))
+	damage_reduction = clampf(float(st.get("damage_reduction", 0.0)), 0.0, 0.7)
+	speed_bonus = float(st.get("speed_bonus", 0.0))
+	crit_bonus = clampf(float(st.get("crit_bonus", 0.0)), 0.0, 100.0)
+	hp_regen = float(st.get("hp_regen", 0.0))
+	attack_interval = maxf(0.1, float(st.get("attack_interval", 0.55)))
+	attack_range = float(st.get("attack_range", 420.0))
+	sword_element = str(st.get("sword_element", "none"))
+	extra_shots = int(st.get("extra_shots", 0))
+	pierce = bool(st.get("pierce", false))
+
+	var it: Dictionary = data.get("items", {})
+	talisman_bag = to_string_array(it.get("talisman_bag", []))
+	selected_talisman = int(it.get("selected_talisman", 0))
+	unlocked_sword = str(it.get("unlocked_sword", ""))
+	formation_bag = to_string_array(it.get("formation_bag", []))
+	artifacts = to_string_array(it.get("artifacts", []))
+	xp_bonus = float(it.get("xp_bonus", 0.0))
+	kill_heal = int(it.get("kill_heal", 0))
+	low_hp_armor = float(it.get("low_hp_armor", 0.0))
+	crit_dmg_bonus = float(it.get("crit_dmg_bonus", 0.0))
+
+	learned_skills = to_string_array(data.get("skills", []))
+
+	var se: Dictionary = data.get("session", {})
+	wave = maxi(1, int(se.get("wave", 1)))
+	wave_kills = maxi(0, int(se.get("wave_kills", 0)))
+	run_time = maxf(0.0, float(se.get("run_time", 0.0)))
+	distance_traveled = maxf(0.0, float(se.get("distance_traveled", 0.0)))
+
+	# 按读回的境界重建场景与妖兽
+	update_scene()
+	update_camera()
+	obstacles.clear()
+	obstacle_cells.clear()
+	refill_enemies()
+	save_timer = 0.0
+	return true
 
 
 func restart_game() -> void:
@@ -2279,6 +2515,7 @@ func restart_game() -> void:
 	attack_cooldown = 0.0
 	message_timer = 0.0
 	message_text = ""
+	save_timer = 0.0
 
 	reset_enemies()
 
