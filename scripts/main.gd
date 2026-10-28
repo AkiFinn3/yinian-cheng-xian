@@ -3639,11 +3639,11 @@ func _draw() -> void:
 			var omod := Color.WHITE
 			if float(o["flash"]) > 0.0:
 				omod = Color(2.0, 2.0, 2.0, 1.0)
-			# 古木是竖长方形，按原始比例显示
-			var tw := orad * 2.0
+			# 贴图按碰撞体 1.1 倍绘制（与生成器一致）
+			var tw := orad * 2.0 * 1.1
 			var th := tw
 			if str(o["type"]) == "tree":
-				th = tw * 1.5
+				th = tw * 1.52
 			draw_texture_rect(
 				otex,
 				Rect2(Vector2(op.x - tw / 2.0, op.y - th / 2.0), Vector2(tw, th)),
@@ -3730,9 +3730,11 @@ func _draw() -> void:
 			elif bool(e.get("exploding", false)):
 				var tt := float(e.get("explode_timer", 0.35))
 				emod = Color(1.6, 0.6, 0.6, 1.0) if int(tt * 20.0) % 2 == 0 else Color(1.8, 1.8, 1.8, 1.0)
+			# 贴图按碰撞体 1.35 倍绘制（与生成器一致）
+			var tex_sz := draw_size * 1.35
 			draw_texture_rect(
 				etex,
-				Rect2(pos - Vector2.ONE * draw_size / 2.0, Vector2.ONE * draw_size),
+				Rect2(pos - Vector2.ONE * tex_sz / 2.0, Vector2.ONE * tex_sz),
 				false, emod
 			)
 		else:
@@ -3850,14 +3852,15 @@ func _draw() -> void:
 	var psp := w2s(player_pos)
 
 	if tex_player != null:
-		# 贴图按 player_size 缩放显示，中心对齐
-		var half := player_size / 2.0
+		# 贴图按碰撞体 1.42 倍绘制（与生成器一致），中心对齐
+		var draw_sz := player_size * 1.42
+		var half := draw_sz / 2.0
 		var mod := Color.WHITE
 		if damage_cooldown > 0.0:
-			mod = Color(1.0, 1.0, 1.0, 0.5)
+			mod = Color(1.6, 1.6, 1.6, 1.0)     # 提亮模拟受击
 		draw_texture_rect(
 			tex_player,
-			Rect2(psp - Vector2.ONE * half, Vector2.ONE * player_size),
+			Rect2(psp - Vector2.ONE * half, Vector2.ONE * draw_sz),
 			false, mod
 		)
 	else:

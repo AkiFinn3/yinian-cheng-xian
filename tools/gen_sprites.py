@@ -1,670 +1,769 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-《一念成仙》像素水墨 Q 版素材生成器
+《一念成仙》像素素材生成器 · 剑风传奇风格（v0.24.0）
 
-设计要点：
-1. 水墨感：不用纯黑描边，用墨色深浅层次（焦/浓/重/淡/清）
-2. 像素感：32x32 等小尺寸，硬边，最近邻放大
-3. Q 版：头身比约 1:1.5，大头小身，眼睛占脸部 1/3
-4. 抖动：Bayer 4x4 矩阵做墨色渐变（像素画颜色有限，靠点阵密度模拟过渡）
+风格要点（参考三浦建太郎《剑风传奇》）：
+1. 写实壮硕比例：头身比约 1:2.5，宽肩厚躯
+2. 密集排线：单向 + 交叉斜线做阴影，不用柔和渐变
+3. 高对比：近黑底色 + 1px 亮边（rim light）
+4. 暗调配色：整体压暗，血红作为强点缀
+5. 粗粝轮廓：外轮廓不规则，有破损感
 
 运行：python3 tools/gen_sprites.py
+旧版（水墨Q版）保留在 tools/gen_sprites_ink_q.py
 """
 
 import os
 import math
+import random
 from PIL import Image, ImageDraw
 
+random.seed(20261028)
+
 # ============================================================
-# 调色板
+# 调色板：暗黑高对比
 # ============================================================
 
-# 墨色系：五色层次
-INK_BLACK = (0x1A, 0x1A, 0x1A, 255)   # 焦墨：眼睛、核心轮廓
-INK_DARK = (0x2D, 0x2D, 0x2D, 255)    # 浓墨：主要描边
-INK_MID = (0x45, 0x45, 0x45, 255)     # 重墨：阴影
-INK_LIGHT = (0x6B, 0x6B, 0x6B, 255)   # 淡墨：中间调
-INK_PALE = (0x9A, 0x9A, 0x9A, 255)    # 清墨：高光过渡
-PAPER = (0xF5, 0xF0, 0xE8, 255)       # 留白：宣纸底色
+BLACK = (0x08, 0x08, 0x0A, 255)      # 极黑（最深）
+DARK = (0x16, 0x16, 0x1A, 255)       # 暗部
+MID = (0x28, 0x28, 0x2E, 255)        # 中间调
+GREY = (0x42, 0x42, 0x4A, 255)       # 灰
+LIGHT = (0x6A, 0x6A, 0x74, 255)      # 亮灰
+HILITE = (0xA8, 0xA8, 0xB4, 255)     # 高光
+WHITE = (0xE4, 0xE4, 0xEC, 255)      # 纯白高光
 
-# 点缀色（饱和度压低，符合"色不压墨"）
-C_PLAYER = (0x5B, 0xA8, 0x9C, 255)    # 玩家·青
-C_WOLF = (0x8B, 0x5A, 0x8C, 255)      # 妖狼·紫
-C_BIRD = (0xC9, 0xA2, 0x27, 255)      # 疾风雀·金
-C_GOLEM = (0xA0, 0x52, 0x2D, 255)     # 岩甲兽·赭
-C_CULTIVATOR = (0x5F, 0x4B, 0x8B, 255)  # 邪修·靛
-C_LEECH = (0x9B, 0x2D, 0x30, 255)     # 血蛭·绛
-C_SPIDER = (0xB5, 0x65, 0x1D, 255)    # 噬魂蛛·褐
-C_HEALER = (0x4A, 0x7A, 0x5C, 255)    # 尸巫·苍
-C_BOSS = (0x9B, 0x22, 0x26, 255)      # 首领·赤
-C_SWORD = (0x7F, 0xD4, 0xC8, 255)     # 飞剑·青白
-C_SHOT = (0x8B, 0x6F, 0xC4, 255)      # 幽火·靛紫
-C_ORB = (0xA8, 0xE6, 0xD8, 255)       # 晶石·青光
+BLOOD = (0x8B, 0x0F, 0x12, 255)      # 血红（主点缀）
+BLOOD_B = (0xC4, 0x1E, 0x22, 255)    # 鲜血（亮）
+
+# 各类实体的暗调识别色（压低明度，保证战斗中能分辨）
+A_PLAYER = (0x3A, 0x4A, 0x52, 255)   # 钢青
+A_WOLF = (0x3D, 0x2A, 0x3F, 255)     # 暗紫
+A_BIRD = (0x4A, 0x3D, 0x18, 255)     # 暗金
+A_GOLEM = (0x4A, 0x2A, 0x18, 255)    # 暗赭
+A_CULT = (0x2E, 0x26, 0x40, 255)     # 暗靛
+A_LEECH = (0x4A, 0x12, 0x15, 255)    # 暗绛
+A_SPIDER = (0x3F, 0x24, 0x10, 255)   # 暗褐
+A_HEALER = (0x1F, 0x35, 0x24, 255)   # 暗苍
+A_BOSS = (0x5C, 0x0A, 0x0C, 255)     # 血赤
 
 TRANSPARENT = (0, 0, 0, 0)
 
+
+def shade(c, f):
+    """按系数明暗调整"""
+    return (
+        max(0, min(255, int(c[0] * f))),
+        max(0, min(255, int(c[1] * f))),
+        max(0, min(255, int(c[2] * f))),
+        c[3],
+    )
+
+
 # ============================================================
-# Bayer 4x4 抖动矩阵
-# 用于在两色之间做点阵过渡，模拟水墨渐变
+# 排线（剑风的核心视觉语言）
 # ============================================================
 
-BAYER_4 = [
-    [0, 8, 2, 10],
-    [12, 4, 14, 6],
-    [3, 11, 1, 9],
-    [15, 7, 13, 5],
-]
-
-
-def dither_ratio(x, y, ratio):
-    """返回该像素是否应使用第二个颜色。ratio: 0.0~1.0"""
-    threshold = (BAYER_4[y % 4][x % 4] + 0.5) / 16.0
-    return ratio > threshold
-
-
-def dither_fill(img, box, color_a, color_b, ratio_a):
-    """在 box 区域内用抖动填充两色混合。
-    ratio_a 越大，color_a 占比越高。
+def hatch(img, box, color, density=4, direction=1, only_dark=True):
+    """单向斜线排线。density 越大越稀（4 中等，6 稀疏）。
+    only_dark=True 时只压暗已有较暗像素，避免把亮部糊成噪点。
     """
     x0, y0, x1, y1 = box
     px = img.load()
-    for y in range(y0, y1):
-        for x in range(x0, x1):
-            if x < 0 or y < 0 or x >= img.width or y >= img.height:
+    for y in range(max(0, y0), min(img.height, y1)):
+        for x in range(max(0, x0), min(img.width, x1)):
+            if px[x, y][3] == 0:
                 continue
-            if dither_ratio(x, y, ratio_a):
-                px[x, y] = color_a
-            else:
-                px[x, y] = color_b
+            if only_dark and px[x, y][0] > 0x55:
+                continue          # 亮部不排线
+            v = (x * direction + y) % density
+            if v == 0:
+                px[x, y] = color
 
 
-def shade(base, factor):
-    """按亮度系数调整颜色（0.0 全黑 ~ 1.0 原色）"""
-    r, g, b, a = base
-    return (
-        max(0, min(255, int(r * factor))),
-        max(0, min(255, int(g * factor))),
-        max(0, min(255, int(b * factor))),
-        a,
-    )
+def cross_hatch(img, box, color, density=6):
+    """交叉排线：两个方向叠加。density 越大越稀，默认 6 保证结构可辨。"""
+    hatch(img, box, color, density, 1)
+    hatch(img, box, color, density, -1)
 
 
-def ink_outline(img, mask_func, base_color):
-    """墨色描边：在 mask 边缘画三层墨，由外到内依次变浅。
-    mask_func(x, y) -> bool 表示该像素属于实体本体。
-    """
+def rim_light(img, light_color=HILITE):
+    """轮廓光：给不透明区域的左上边缘加 1px 亮线（光源在左上）"""
     px = img.load()
     w, h = img.size
-    # 找出所有"实体外但紧邻实体"的像素
-    ring1 = []
+    marks = []
     for y in range(h):
         for x in range(w):
-            if mask_func(x, y):
+            if px[x, y][3] == 0:
                 continue
-            # 检查 4 邻域
-            near = False
+            up_empty = (y == 0) or (px[x, y - 1][3] == 0)
+            left_empty = (x == 0) or (px[x - 1, y][3] == 0)
+            if up_empty or left_empty:
+                marks.append((x, y))
+    for (x, y) in marks:
+        px[x, y] = light_color
+
+
+def ink_edge(img, base_color=BLACK):
+    """外轮廓加深：紧贴实体的外圈像素涂深色，形成粗粝边缘"""
+    px = img.load()
+    w, h = img.size
+    marks = []
+    for y in range(h):
+        for x in range(w):
+            if px[x, y][3] != 0:
+                continue
             for dx, dy in ((1, 0), (-1, 0), (0, 1), (0, -1)):
                 nx, ny = x + dx, y + dy
-                if 0 <= nx < w and 0 <= ny < h and mask_func(nx, ny):
-                    near = True
+                if 0 <= nx < w and 0 <= ny < h and px[nx, ny][3] != 0:
+                    marks.append((x, y))
                     break
-            if near:
-                ring1.append((x, y))
-    for (x, y) in ring1:
-        px[x, y] = INK_DARK
-    return ring1
+    for (x, y) in marks:
+        px[x, y] = base_color
+
+
+def rough_edge(img, amount=0.25):
+    """边缘破损：随机挖掉一些边缘像素，制造粗粝感"""
+    px = img.load()
+    w, h = img.size
+    to_clear = []
+    for y in range(h):
+        for x in range(w):
+            if px[x, y][3] == 0:
+                continue
+            edge = False
+            for dx, dy in ((1, 0), (-1, 0), (0, 1), (0, -1)):
+                nx, ny = x + dx, y + dy
+                if not (0 <= nx < w and 0 <= ny < h) or px[nx, ny][3] == 0:
+                    edge = True
+                    break
+            if edge and random.random() < amount:
+                to_clear.append((x, y))
+    for (x, y) in to_clear:
+        px[x, y] = TRANSPARENT
 
 
 # ============================================================
-# Q 版人物基础：大头小身
-# 头占约 55% 高度，身体 45%
+# 写实比例人形（头身比 1:2.5）
 # ============================================================
 
-def draw_chibi_body(img, draw, cx, cy, body_h, body_w, robe_color, head_r):
-    """画 Q 版身体（袍子）+ 头。
-    cx, cy: 身体底部中心
-    body_h: 身体高度
-    body_w: 身体宽度
-    head_r: 头半径
-    """
-    # --- 身体（袍子）：梯形，下宽上窄 ---
-    top_y = cy - body_h
-    top_w = int(body_w * 0.62)
-    bot_w = body_w
+def humanoid(img, draw, cx, top_y, total_h, body_w, robe_color,
+             head_ratio=0.28, shoulder_w=1.0):
+    """画写实比例人形，返回 (头中心y, 头半径)。"""
+    head_h = max(4, int(total_h * head_ratio))
+    head_r = max(2, head_h // 2)
+    head_cy = top_y + head_r
+
+    body_top = top_y + head_h
+    body_h = total_h - head_h
+
+    # ---- 头：略扁的椭圆（写实人脸不是正圆）----
+    draw.ellipse(
+        [cx - head_r, head_cy - head_r, cx + head_r, head_cy + head_r + 1],
+        fill=shade(robe_color, 1.15),
+    )
+
+    # ---- 躯干：肩部最宽，向下收窄 ----
     for i in range(body_h):
         t = i / max(1, body_h - 1)
-        half_w = int(top_w / 2 + (bot_w - top_w) / 2 * t)
-        y = top_y + i
-        x0 = cx - half_w
-        x1 = cx + half_w
-        for x in range(x0, x1 + 1):
-            if 0 <= x < img.width and 0 <= y < img.height:
-                # 左侧稍暗（光从右上来）
-                if x < cx - half_w * 0.35:
-                    img.putpixel((x, y), shade(robe_color, 0.78))
-                else:
-                    img.putpixel((x, y), robe_color)
+        if t < 0.15:
+            half = int(body_w * shoulder_w * (0.72 + t / 0.15 * 0.28))
+        else:
+            half = int(body_w * shoulder_w * (1.0 - (t - 0.15) / 0.85 * 0.42))
+        half = max(2, half)
+        y = body_top + i
+        for x in range(cx - half, cx + half + 1):
+            if not (0 <= x < img.width and 0 <= y < img.height):
+                continue
+            rel = (x - (cx - half)) / max(1, 2 * half)
+            if rel < 0.25:
+                c = shade(robe_color, 1.25)
+            elif rel < 0.55:
+                c = robe_color
+            elif rel < 0.8:
+                c = shade(robe_color, 0.65)
+            else:
+                c = shade(robe_color, 0.4)
+            img.putpixel((x, y), c)
 
-    # --- 腰带（一道深色横带）---
-    belt_y = top_y + int(body_h * 0.42)
-    for x in range(cx - top_w // 2 - 1, cx + top_w // 2 + 2):
-        for dy in (0, 1):
-            y = belt_y + dy
-            if 0 <= x < img.width and 0 <= y < img.height:
-                img.putpixel((x, y), INK_MID)
-
-    # --- 头：圆形，坐在身体上方 ---
-    head_cy = top_y - head_r + 2
-    draw.ellipse(
-        [cx - head_r, head_cy - head_r, cx + head_r, head_cy + head_r],
-        fill=PAPER,
-    )
     return head_cy, head_r
 
 
-def draw_chibi_face(img, draw, cx, head_cy, head_r, eye_color=INK_BLACK):
-    """Q 版脸：大眼睛占脸部 1/3，简单表情。"""
-    # 眼睛：两颗大黑点
-    eye_dx = max(2, head_r // 2)
-    eye_y = head_cy
-    eye_size = max(1, head_r // 3)
-    for sign in (-1, 1):
-        ex = cx + sign * eye_dx
-        draw.ellipse(
-            [ex - eye_size, eye_y - eye_size, ex + eye_size, eye_y + eye_size],
-            fill=eye_color,
-        )
-        # 眼睛高光
-        if eye_size >= 2:
-            img.putpixel((ex - 1, eye_y - 1), PAPER)
+def face_guts(img, cx, head_cy, head_r, eye_color=WHITE, blood=False):
+    """剑风式面孔：暗部 + 单点眼神光，五官几乎不可见。"""
+    px = img.load()
+    for y in range(head_cy - head_r, head_cy + head_r + 1):
+        for x in range(cx - head_r, cx + head_r + 1):
+            if 0 <= x < img.width and 0 <= y < img.height:
+                if px[x, y][3] != 0:
+                    px[x, y] = shade(px[x, y], 0.55)
 
-    # 嘴：一道小横线
-    mouth_y = head_cy + head_r // 2
-    for dx in range(-1, 2):
-        x = cx + dx
-        if 0 <= x < img.width and 0 <= mouth_y < img.height:
-            img.putpixel((x, mouth_y), INK_MID)
+    # 眼睛：1px 亮点（黑暗中一点凶光）
+    eye_y = head_cy - max(0, head_r // 3)
+    for sign in (-1, 1):
+        ex = cx + sign * max(1, head_r // 2)
+        if 0 <= ex < img.width and 0 <= eye_y < img.height:
+            img.putpixel((ex, eye_y), eye_color)
+
+    if blood:
+        bx = cx + head_r // 2
+        for dy in range(0, head_r):
+            if 0 <= bx < img.width and 0 <= head_cy + dy < img.height:
+                if img.getpixel((bx, head_cy + dy))[3] != 0:
+                    img.putpixel((bx, head_cy + dy), BLOOD)
 
 
 # ============================================================
-# 各实体绘制
+# 各实体
 # ============================================================
 
 def make_player():
-    """玩家：青衫修士，Q 版。头身比约 1:1.2（头 12 行，身 15 行）。"""
-    S = 32
+    """玩家：写实壮硕剑士，暗袍，背负大剑，血围巾。"""
+    S = 34
     img = Image.new("RGBA", (S, S), TRANSPARENT)
     draw = ImageDraw.Draw(img)
     cx = S // 2
 
-    # ---- 头：y=3~14，半径 6（12 行高）----
-    head_cy = 9
-    head_r = 6
-    draw.ellipse([cx - head_r, head_cy - head_r, cx + head_r, head_cy + head_r], fill=PAPER)
+    total_h = 31
+    top_y = 2
+    head_cy, head_r = humanoid(img, draw, cx, top_y, total_h, 6, A_PLAYER,
+                               head_ratio=0.29, shoulder_w=1.15)
 
-    # 头发：盖 y=3~7（额头上方），不遮眼睛
-    for y in range(head_cy - head_r, head_cy - 1):
+    face_guts(img, cx, head_cy, head_r)
+
+    # 头发：短硬
+    for y in range(head_cy - head_r, head_cy - head_r // 2):
         for x in range(cx - head_r, cx + head_r + 1):
-            if (x - cx) ** 2 + (y - head_cy) ** 2 <= head_r ** 2:
+            if (x - cx) ** 2 + (y - head_cy) ** 2 <= (head_r + 1) ** 2:
                 if 0 <= x < S and 0 <= y < S:
-                    img.putpixel((x, y), INK_BLACK)
+                    img.putpixel((x, y), BLACK)
 
-    # 发髻（头顶）
-    draw.ellipse([cx - 2, head_cy - head_r - 2, cx + 2, head_cy - head_r + 2], fill=INK_DARK)
+    # 背负大剑：斜插在背后右侧，不穿脸
+    sword_top = (cx + head_r + 3, top_y + 4)
+    sword_bot = (cx + head_r + 8, top_y + 26)
+    draw.line([sword_top, sword_bot], fill=LIGHT, width=2)
+    draw.line([sword_top, sword_bot], fill=WHITE, width=1)
+    # 剑格
+    draw.line([(cx + head_r + 1, top_y + 7), (cx + head_r + 5, top_y + 5)], fill=DARK, width=2)
 
-    # 眼睛：y=10，两颗 2x1，间距 2
-    eye_y = 10
-    for sign in (-1, 1):
-        ex = cx + sign * 2
-        for dx in (0, 1):
-            if 0 <= ex + dx < S:
-                img.putpixel((ex + dx, eye_y), INK_BLACK)
+    # 血围巾
+    for x in range(cx - head_r - 1, cx + head_r + 2):
+        y = head_cy + head_r
+        if 0 <= x < S and 0 <= y < S:
+            if img.getpixel((x, y))[3] != 0:
+                img.putpixel((x, y), BLOOD)
+    draw.line([(cx + head_r, head_cy + head_r), (cx + head_r + 4, head_cy + head_r + 5)],
+              fill=BLOOD, width=1)
 
-    # 嘴：y=13，三像素
-    for dx in range(-1, 2):
-        x = cx + dx
-        if 0 <= x < S:
-            img.putpixel((x, 13), INK_MID)
+    # 排线阴影
+    cross_hatch(img, (cx, top_y + 12, S, top_y + 30), BLACK, 6)
+    hatch(img, (0, top_y + 20, S, top_y + 31), BLACK, 4, 1)
 
-    # ---- 身体：y=15~29（15 行高）----
-    body_top = 15
-    body_bot = 29
-    for y in range(body_top, body_bot + 1):
-        t = (y - body_top) / max(1, body_bot - body_top)
-        half = int(5 + 4 * t)
-        for x in range(cx - half, cx + half + 1):
-            if 0 <= x < S and 0 <= y < S:
-                # 左侧暗部（清墨过渡，补上第五色）
-                if x < cx - half * 0.45:
-                    img.putpixel((x, y), shade(C_PLAYER, 0.72))
-                elif x < cx - half * 0.15:
-                    img.putpixel((x, y), shade(C_PLAYER, 0.88))
-                else:
-                    img.putpixel((x, y), C_PLAYER)
-
-    # 衣襟 V 领
-    for i in range(4):
-        y = body_top + i
-        for dx in range(-2 + i, 3 - i):
-            x = cx + dx
-            if 0 <= x < S and 0 <= y < S:
-                img.putpixel((x, y), PAPER)
-
-    # 腰带
-    for x in range(cx - 8, cx + 9):
-        for y in (23, 24):
-            if 0 <= x < S and 0 <= y < S:
-                img.putpixel((x, y), INK_MID)
-
-    # 下摆清墨（模拟水墨晕染）
-    dither_fill(img, (cx - 9, 26, cx + 10, 30), shade(C_PLAYER, 0.6), C_PLAYER, 0.4)
-
-    # 墨色描边
-    ink_outline(img, lambda x, y: img.getpixel((x, y))[3] > 0, C_PLAYER)
+    rough_edge(img, 0.18)
+    rim_light(img)
+    ink_edge(img, BLACK)
     return img
 
 
 def make_wolf():
-    """妖狼：紫墨狼形，尖耳，四足。"""
-    S = 32
+    """妖狼：写实四足兽，暗紫，红眼。结构优先，排线只做点缀。"""
+    S = 46
     img = Image.new("RGBA", (S, S), TRANSPARENT)
     draw = ImageDraw.Draw(img)
     cx, cy = S // 2, S // 2 + 2
 
-    # 身体（椭圆）
-    draw.ellipse([cx - 9, cy - 5, cx + 9, cy + 6], fill=C_WOLF)
-    # 头（大，Q 版）
-    draw.ellipse([cx - 6, cy - 11, cx + 6, cy - 1], fill=C_WOLF)
-    # 耳朵（两个三角）
-    draw.polygon([(cx - 6, cy - 10), (cx - 8, cy - 15), (cx - 3, cy - 11)], fill=INK_DARK)
-    draw.polygon([(cx + 6, cy - 10), (cx + 8, cy - 15), (cx + 3, cy - 11)], fill=INK_DARK)
-    # 四足
-    for dx in (-6, -3, 3, 6):
-        draw.rectangle([cx + dx - 1, cy + 5, cx + dx + 1, cy + 9], fill=INK_MID)
-    # 尾巴
-    draw.polygon([(cx + 8, cy), (cx + 13, cy - 4), (cx + 10, cy + 2)], fill=shade(C_WOLF, 0.8))
+    # ---- 躯干：横向椭圆（狼的体态是长条）----
+    draw.ellipse([cx - 14, cy - 6, cx + 10, cy + 6], fill=A_WOLF)
 
-    # 眼睛（狼眼，凶）
-    for sign in (-1, 1):
-        ex = cx + sign * 3
-        img.putpixel((ex, cy - 7), INK_BLACK)
-        img.putpixel((ex, cy - 6), INK_BLACK)
+    # ---- 颈部 + 头：向右前方 ----
+    draw.polygon([
+        (cx + 4, cy - 7), (cx + 12, cy - 9), (cx + 13, cy + 2),
+        (cx + 6, cy + 5),
+    ], fill=shade(A_WOLF, 1.1))
+    # 头（楔形）
+    draw.polygon([
+        (cx + 10, cy - 9), (cx + 18, cy - 6), (cx + 19, cy - 1),
+        (cx + 13, cy + 2), (cx + 9, cy - 3),
+    ], fill=shade(A_WOLF, 1.25))
+    # 吻部（前端突出）
+    draw.polygon([
+        (cx + 17, cy - 5), (cx + 21, cy - 3), (cx + 20, cy + 1), (cx + 16, cy),
+    ], fill=shade(A_WOLF, 1.35))
 
-    # 抖动阴影（腹部）
-    dither_fill(img, (cx - 8, cy + 2, cx + 9, cy + 6), shade(C_WOLF, 0.7), C_WOLF, 0.5)
+    # ---- 耳朵（两只尖三角）----
+    draw.polygon([(cx + 10, cy - 9), (cx + 11, cy - 15), (cx + 14, cy - 8)], fill=DARK)
+    draw.polygon([(cx + 14, cy - 8), (cx + 16, cy - 14), (cx + 18, cy - 6)], fill=DARK)
 
-    ink_outline(img, lambda x, y: img.getpixel((x, y))[3] > 0, C_WOLF)
+    # ---- 四条腿：细长，间距拉开，脚掌略宽 ----
+    legs = [(-12, 9), (-7, 10), (2, 10), (7, 9)]
+    for dx, length in legs:
+        x0 = cx + dx
+        # 大腿（粗）
+        draw.rectangle([x0 - 2, cy + 4, x0 + 1, cy + 7], fill=shade(A_WOLF, 0.75))
+        # 小腿（细）
+        draw.rectangle([x0 - 1, cy + 7, x0 + 1, cy + 4 + length], fill=shade(A_WOLF, 0.6))
+        # 脚掌
+        draw.rectangle([x0 - 2, cy + 4 + length, x0 + 2, cy + 5 + length], fill=DARK)
+
+    # ---- 尾巴（向下垂，粗）----
+    draw.polygon([
+        (cx - 14, cy - 3), (cx - 20, cy + 2), (cx - 21, cy + 8), (cx - 16, cy + 4),
+    ], fill=shade(A_WOLF, 0.7))
+
+    # ---- 红眼（两点）----
+    img.putpixel((cx + 14, cy - 5), BLOOD_B)
+    img.putpixel((cx + 15, cy - 5), BLOOD_B)
+    # 獠牙
+    img.putpixel((cx + 19, cy + 1), WHITE)
+
+    # ---- 排线：只压背部与腹侧的暗部，密度 6 稀疏 ----
+    cross_hatch(img, (cx - 12, cy + 1, cx + 8, cy + 6), BLACK, 6)
+    # 脊背高光（不压暗）
+    hatch(img, (cx - 10, cy - 6, cx + 4, cy - 3), HILITE, 5, -1, False)
+
+    rough_edge(img, 0.15)
+    rim_light(img)
+    ink_edge(img, BLACK)
     return img
 
 
 def make_bird():
-    """疾风雀：金墨飞鸟，展翅。"""
-    S = 24
+    """疾风雀：暗金猛禽，展翼。"""
+    S = 34
     img = Image.new("RGBA", (S, S), TRANSPARENT)
     draw = ImageDraw.Draw(img)
     cx, cy = S // 2, S // 2
 
-    # 身体
-    draw.ellipse([cx - 4, cy - 4, cx + 4, cy + 4], fill=C_BIRD)
-    # 翅膀（两侧三角，展开）
-    draw.polygon([(cx - 4, cy - 2), (cx - 11, cy - 6), (cx - 5, cy + 2)], fill=shade(C_BIRD, 0.85))
-    draw.polygon([(cx + 4, cy - 2), (cx + 11, cy - 6), (cx + 5, cy + 2)], fill=shade(C_BIRD, 0.85))
-    # 头
-    draw.ellipse([cx - 3, cy - 8, cx + 3, cy - 2], fill=C_BIRD)
-    # 喙
-    draw.polygon([(cx - 1, cy - 6), (cx + 1, cy - 6), (cx, cy - 4)], fill=INK_DARK)
+    draw.ellipse([cx - 5, cy - 5, cx + 6, cy + 6], fill=A_BIRD)
+    draw.polygon([(cx - 3, cy - 3), (cx - 16, cy - 9), (cx - 5, cy + 3)], fill=shade(A_BIRD, 0.85))
+    draw.polygon([(cx + 4, cy - 3), (cx + 16, cy - 10), (cx + 6, cy + 3)], fill=shade(A_BIRD, 0.7))
+    draw.ellipse([cx - 4, cy - 11, cx + 4, cy - 3], fill=shade(A_BIRD, 1.2))
+    # 钩喙
+    draw.polygon([(cx + 3, cy - 8), (cx + 8, cy - 6), (cx + 3, cy - 4)], fill=LIGHT)
     # 尾羽
-    draw.polygon([(cx - 2, cy + 3), (cx + 2, cy + 3), (cx, cy + 8)], fill=shade(C_BIRD, 0.75))
+    draw.polygon([(cx - 3, cy + 5), (cx + 3, cy + 5), (cx, cy + 13)], fill=shade(A_BIRD, 0.6))
+    draw.line([(cx - 3, cy + 5), (cx, cy + 13)], fill=DARK)
+    draw.line([(cx + 3, cy + 5), (cx, cy + 13)], fill=DARK)
 
-    # 眼睛
-    img.putpixel((cx - 1, cy - 6), INK_BLACK)
-    img.putpixel((cx + 1, cy - 6), INK_BLACK)
+    img.putpixel((cx + 2, cy - 8), BLOOD_B)
 
-    ink_outline(img, lambda x, y: img.getpixel((x, y))[3] > 0, C_BIRD)
+    hatch(img, (cx - 16, cy - 6, cx - 4, cy + 4), BLACK, 4, 1)
+    hatch(img, (cx + 5, cy - 7, cx + 16, cy + 3), BLACK, 4, -1)
+    img.putpixel((cx - 15, cy - 9), HILITE)
+    img.putpixel((cx + 15, cy - 10), HILITE)
+
+    rough_edge(img, 0.22)
+    rim_light(img)
+    ink_edge(img, BLACK)
     return img
 
 
 def make_golem():
-    """岩甲兽：赭墨厚甲，方形块面。"""
-    S = 48
+    """岩甲兽：巨大岩块躯体，裂隙透光。"""
+    S = 70
     img = Image.new("RGBA", (S, S), TRANSPARENT)
     draw = ImageDraw.Draw(img)
-    cx, cy = S // 2, S // 2 + 2
+    cx, cy = S // 2, S // 2 + 4
 
-    # 身体（大方块，厚重）
-    draw.rectangle([cx - 14, cy - 10, cx + 14, cy + 12], fill=C_GOLEM)
-    # 头（小方块，缩在肩膀里）
-    draw.rectangle([cx - 7, cy - 17, cx + 7, cy - 8], fill=shade(C_GOLEM, 1.1))
-    # 四足（粗短）
-    for dx in (-11, -5, 5, 11):
-        draw.rectangle([cx + dx - 2, cy + 10, cx + dx + 2, cy + 16], fill=INK_MID)
-    # 甲片纹路
-    for i in range(-12, 13, 6):
-        draw.line([(cx + i, cy - 8), (cx + i, cy + 10)], fill=shade(C_GOLEM, 0.65), width=1)
+    pts = [
+        (cx - 22, cy + 10), (cx - 24, cy - 6), (cx - 16, cy - 18),
+        (cx - 2, cy - 22), (cx + 14, cy - 18), (cx + 23, cy - 5),
+        (cx + 22, cy + 12), (cx + 8, cy + 18), (cx - 10, cy + 17),
+    ]
+    draw.polygon(pts, fill=A_GOLEM)
+    draw.polygon([
+        (cx - 9, cy - 20), (cx + 9, cy - 20), (cx + 11, cy - 10), (cx - 11, cy - 10),
+    ], fill=shade(A_GOLEM, 1.25))
+    for dx in (-16, -6, 6, 16):
+        draw.rectangle([cx + dx - 3, cy + 15, cx + dx + 3, cy + 25], fill=shade(A_GOLEM, 0.55))
 
-    # 眼睛（发光小点）
+    # 裂纹透光
+    cracks = [
+        [(cx - 16, cy - 14), (cx - 6, cy - 6), (cx - 8, cy + 6)],
+        [(cx + 4, cy - 16), (cx + 10, cy - 4), (cx + 6, cy + 10)],
+        [(cx - 2, cy + 2), (cx + 4, cy + 8)],
+    ]
+    for c in cracks:
+        for i in range(len(c) - 1):
+            draw.line([c[i], c[i + 1]], fill=BLOOD_B, width=1)
+
     for sign in (-1, 1):
-        ex = cx + sign * 3
-        draw.rectangle([ex - 1, cy - 15, ex + 1, cy - 13], fill=C_BIRD)
+        img.putpixel((cx + sign * 4, cy - 15), BLOOD_B)
 
-    # 抖动阴影（下半身）
-    dither_fill(img, (cx - 13, cy + 4, cx + 14, cy + 12), shade(C_GOLEM, 0.6), C_GOLEM, 0.55)
+    cross_hatch(img, (cx, cy - 18, cx + 24, cy + 18), BLACK, 6)
+    hatch(img, (cx - 22, cy + 6, cx + 22, cy + 18), BLACK, 4, 1)
+    hatch(img, (cx - 20, cy - 16, cx - 4, cy - 6), HILITE, 5, -1, False)
 
-    ink_outline(img, lambda x, y: img.getpixel((x, y))[3] > 0, C_GOLEM)
+    rough_edge(img, 0.24)
+    rim_light(img)
+    ink_edge(img, BLACK)
     return img
 
 
 def make_cultivator():
-    """邪修：靛墨，持符，戴斗笠。"""
-    S = 32
+    """邪修：兜帽暗袍，手持符箓。"""
+    S = 40
     img = Image.new("RGBA", (S, S), TRANSPARENT)
     draw = ImageDraw.Draw(img)
     cx = S // 2
 
-    head_r = 6
-    body_h = 10
-    body_bottom = S - 3
-    head_cy, hr = draw_chibi_body(
-        img, draw, cx, body_bottom, body_h, 12, C_CULTIVATOR, head_r
-    )
+    total_h = 36
+    top_y = 2
+    head_cy, head_r = humanoid(img, draw, cx, top_y, total_h, 6, A_CULT,
+                               head_ratio=0.27, shoulder_w=1.0)
 
-    # 斗笠（宽三角）
-    draw.polygon(
-        [(cx - 11, head_cy - 2), (cx + 11, head_cy - 2), (cx, head_cy - 11)],
-        fill=INK_MID,
-    )
-    # 斗笠边缘
-    draw.line([(cx - 11, head_cy - 2), (cx + 11, head_cy - 2)], fill=INK_DARK, width=1)
-
-    # 脸（斗笠下只露下半）
-    draw.ellipse([cx - hr, head_cy - 1, cx + hr, head_cy + hr], fill=PAPER)
+    draw.polygon([
+        (cx - head_r - 3, head_cy + 3), (cx + head_r + 3, head_cy + 3),
+        (cx + head_r, head_cy - head_r - 3), (cx - head_r, head_cy - head_r - 3),
+    ], fill=shade(A_CULT, 0.8))
+    draw.ellipse([cx - head_r, head_cy - 2, cx + head_r, head_cy + head_r], fill=BLACK)
     for sign in (-1, 1):
-        ex = cx + sign * 2
-        img.putpixel((ex, head_cy + 2), INK_BLACK)
+        img.putpixel((cx + sign * 2, head_cy + 1), BLOOD_B)
 
-    # 手持符箓（右手黄色小方块）
-    draw.rectangle([cx + 7, body_bottom - body_h + 4, cx + 10, body_bottom - body_h + 8], fill=C_BIRD)
+    # 符箓
+    fx, fy = cx + head_r + 4, head_cy + 8
+    draw.rectangle([fx, fy, fx + 3, fy + 5], fill=A_BIRD)
+    draw.rectangle([fx, fy, fx + 3, fy + 5], outline=LIGHT)
+    img.putpixel((fx + 1, fy + 2), BLOOD_B)
 
-    ink_outline(img, lambda x, y: img.getpixel((x, y))[3] > 0, C_CULTIVATOR)
+    cross_hatch(img, (cx, head_cy + 6, S, S), BLACK, 6)
+    hatch(img, (0, head_cy + 14, S, S), BLACK, 4, 1)
+
+    rough_edge(img, 0.2)
+    rim_light(img)
+    ink_edge(img, BLACK)
     return img
 
 
 def make_leech():
-    """血蛭：绛墨软体，环节。"""
-    S = 32
+    """血蛭：暗绛环节软体，湿滑高光。"""
+    S = 48
     img = Image.new("RGBA", (S, S), TRANSPARENT)
     draw = ImageDraw.Draw(img)
     cx, cy = S // 2, S // 2
 
-    # 身体（椭圆软体）
-    draw.ellipse([cx - 11, cy - 7, cx + 11, cy + 7], fill=C_LEECH)
-    # 环节（横向弧线）
-    for i in range(-8, 9, 4):
-        draw.arc([cx + i - 3, cy - 6, cx + i + 3, cy + 6], 0, 180, fill=shade(C_LEECH, 0.6), width=1)
-    # 头部（前端稍大）
-    draw.ellipse([cx + 6, cy - 5, cx + 13, cy + 5], fill=shade(C_LEECH, 1.1))
-    # 吸盘口
-    draw.ellipse([cx + 9, cy - 2, cx + 12, cy + 2], fill=INK_DARK)
+    segs = [
+        (cx - 16, cy + 2, 8, 6),
+        (cx - 8, cy - 1, 9, 7),
+        (cx + 1, cy - 3, 9, 8),
+        (cx + 10, cy - 1, 8, 7),
+        (cx + 17, cy + 3, 6, 5),
+    ]
+    for (sx, sy, rw, rh) in segs:
+        draw.ellipse([sx - rw, sy - rh, sx + rw, sy + rh], fill=A_LEECH)
 
-    # 眼睛
-    img.putpixel((cx + 7, cy - 2), INK_BLACK)
-    img.putpixel((cx + 7, cy + 2), INK_BLACK)
+    for (sx, sy, rw, rh) in segs[:-1]:
+        draw.arc([sx - rw, sy - rh, sx + rw, sy + rh], 250, 290, fill=BLACK)
 
-    # 抖动高光
-    dither_fill(img, (cx - 10, cy - 6, cx + 5, cy - 1), shade(C_LEECH, 1.25), C_LEECH, 0.4)
+    draw.ellipse([cx + 17, cy, cx + 24, cy + 8], fill=shade(A_LEECH, 1.3))
+    draw.ellipse([cx + 19, cy + 2, cx + 22, cy + 6], fill=BLACK)
+    for i in range(3):
+        img.putpixel((cx + 20 + i, cy + 3), WHITE)
 
-    ink_outline(img, lambda x, y: img.getpixel((x, y))[3] > 0, C_LEECH)
+    for (sx, sy, rw, rh) in segs:
+        img.putpixel((sx, sy - rh + 1), HILITE)
+        img.putpixel((sx - 1, sy - rh + 2), LIGHT)
+
+    cross_hatch(img, (cx - 20, cy + 2, cx + 22, cy + 9), BLACK, 6)
+
+    rough_edge(img, 0.18)
+    rim_light(img)
+    ink_edge(img, BLACK)
     return img
 
 
 def make_spider():
-    """噬魂蛛：褐墨八足，圆腹。"""
-    S = 28
+    """噬魂蛛：暗褐球腹，长足带刺。"""
+    S = 38
     img = Image.new("RGBA", (S, S), TRANSPARENT)
     draw = ImageDraw.Draw(img)
     cx, cy = S // 2, S // 2 + 1
 
-    # 腹部
-    draw.ellipse([cx - 6, cy - 4, cx + 6, cy + 7], fill=C_SPIDER)
-    # 头胸部
-    draw.ellipse([cx - 4, cy - 7, cx + 4, cy + 1], fill=shade(C_SPIDER, 1.1))
-    # 八足（四对，折线）
+    draw.ellipse([cx - 8, cy - 3, cx + 8, cy + 11], fill=A_SPIDER)
+    draw.ellipse([cx - 6, cy - 8, cx + 6, cy + 2], fill=shade(A_SPIDER, 1.25))
+
     for sign in (-1, 1):
-        for i, (dy, ext) in enumerate([(-3, 9), (-1, 10), (2, 9), (4, 7)]):
-            x0 = cx + sign * 4
+        for i, (dy, ext) in enumerate([(-5, 12), (-2, 14), (2, 13), (5, 10)]):
+            x0 = cx + sign * 5
             y0 = cy + dy
-            x1 = cx + sign * ext
-            y1 = cy + dy - 2
-            x2 = cx + sign * (ext + 1)
-            y2 = cy + dy + 2
-            draw.line([(x0, y0), (x1, y1)], fill=INK_MID, width=1)
-            draw.line([(x1, y1), (x2, y2)], fill=INK_MID, width=1)
+            x1 = cx + sign * (ext - 2)
+            y1 = cy + dy - 4
+            x2 = cx + sign * ext
+            y2 = cy + dy + 4
+            draw.line([(x0, y0), (x1, y1)], fill=DARK, width=1)
+            draw.line([(x1, y1), (x2, y2)], fill=BLACK, width=1)
+            img.putpixel((x1, y1 - 1), LIGHT)
 
-    # 眼睛（多个小点，蜘蛛特征）
-    for dx, dy in [(-2, -4), (2, -4), (-1, -6), (1, -6)]:
-        img.putpixel((cx + dx, cy + dy), C_BIRD)
+    for dx, dy in [(-3, -6), (3, -6), (-1, -8), (1, -8)]:
+        img.putpixel((cx + dx, cy + dy), BLOOD_B)
 
-    # 腹部斑点
-    for dx, dy in [(-2, 2), (2, 2), (0, 4)]:
-        img.putpixel((cx + dx, cy + dy), INK_MID)
+    draw.ellipse([cx - 4, cy + 1, cx + 4, cy + 7], outline=BLOOD, width=1)
 
-    ink_outline(img, lambda x, y: img.getpixel((x, y))[3] > 0, C_SPIDER)
+    cross_hatch(img, (cx - 8, cy + 3, cx + 8, cy + 11), BLACK, 6)
+
+    rough_edge(img, 0.22)
+    rim_light(img)
+    ink_edge(img, BLACK)
     return img
 
 
 def make_healer():
-    """尸巫：苍墨枯瘦，长袍，持杖。"""
-    S = 32
+    """尸巫：枯瘦长袍，持杖，兜帽。"""
+    S = 46
     img = Image.new("RGBA", (S, S), TRANSPARENT)
     draw = ImageDraw.Draw(img)
     cx = S // 2
 
-    head_r = 6
-    body_h = 12
-    body_bottom = S - 3
-    head_cy, hr = draw_chibi_body(
-        img, draw, cx, body_bottom, body_h, 12, C_HEALER, head_r
-    )
+    total_h = 41
+    top_y = 2
+    head_cy, head_r = humanoid(img, draw, cx, top_y, total_h, 5, A_HEALER,
+                               head_ratio=0.25, shoulder_w=0.9)
 
-    # 兜帽（罩住头）
-    draw.polygon(
-        [(cx - 9, head_cy + 2), (cx + 9, head_cy + 2), (cx + 7, head_cy - 9), (cx - 7, head_cy - 9)],
-        fill=INK_MID,
-    )
-    # 脸（阴影中，只露眼睛）
-    draw.ellipse([cx - hr + 1, head_cy - 2, cx + hr - 1, head_cy + hr - 1], fill=INK_DARK)
+    draw.polygon([
+        (cx - head_r - 3, head_cy + 4), (cx + head_r + 3, head_cy + 4),
+        (cx + head_r - 1, head_cy - head_r - 4), (cx - head_r + 1, head_cy - head_r - 4),
+    ], fill=shade(A_HEALER, 0.7))
+    draw.ellipse([cx - head_r, head_cy - 1, cx + head_r, head_cy + head_r], fill=BLACK)
     for sign in (-1, 1):
-        ex = cx + sign * 2
-        img.putpixel((ex, head_cy + 1), C_ORB)
+        img.putpixel((cx + sign * 2, head_cy + 2), (0x6F, 0xD8, 0xA0, 255))
 
-    # 法杖（左侧竖线 + 顶端球）
-    sx = cx - 8
-    draw.line([(sx, body_bottom - body_h + 2), (sx, body_bottom - 2)], fill=INK_DARK, width=1)
-    draw.ellipse([sx - 2, body_bottom - body_h - 1, sx + 2, body_bottom - body_h + 3], fill=C_ORB)
+    # 法杖
+    sx = cx - head_r - 6
+    draw.line([(sx, top_y + 8), (sx, S - 2)], fill=DARK, width=2)
+    draw.line([(sx, top_y + 8), (sx, S - 2)], fill=GREY, width=1)
+    draw.ellipse([sx - 3, top_y + 2, sx + 3, top_y + 9], fill=(0x2E, 0x6B, 0x3A, 255))
+    img.putpixel((sx, top_y + 5), (0x6F, 0xD8, 0xA0, 255))
 
-    ink_outline(img, lambda x, y: img.getpixel((x, y))[3] > 0, C_HEALER)
+    cross_hatch(img, (cx, head_cy + 8, S, S), BLACK, 6)
+    hatch(img, (0, head_cy + 18, S, S), BLACK, 4, 1)
+    for dx in (-4, 2, 7):
+        for y in range(head_cy + 12, S - 1):
+            x = cx + dx
+            if 0 <= x < S and img.getpixel((x, y))[3] != 0:
+                img.putpixel((x, y), shade(img.getpixel((x, y)), 0.6))
+
+    rough_edge(img, 0.22)
+    rim_light(img)
+    ink_edge(img, BLACK)
     return img
 
 
 def make_boss():
-    """魔道老祖：赤墨巨躯，双角，长袍。"""
-    S = 64
+    """魔道老祖：巨大魔躯，双角，血披风。"""
+    S = 148
     img = Image.new("RGBA", (S, S), TRANSPARENT)
     draw = ImageDraw.Draw(img)
     cx = S // 2
 
-    head_r = 12
-    body_h = 24
-    body_bottom = S - 4
-    head_cy, hr = draw_chibi_body(
-        img, draw, cx, body_bottom, body_h, 26, C_BOSS, head_r
-    )
+    total_h = 138
+    top_y = 4
+    head_cy, head_r = humanoid(img, draw, cx, top_y, total_h, 22, A_BOSS,
+                               head_ratio=0.22, shoulder_w=1.25)
 
     # 双角
-    draw.polygon([(cx - 10, head_cy - 6), (cx - 16, head_cy - 18), (cx - 6, head_cy - 10)], fill=INK_BLACK)
-    draw.polygon([(cx + 10, head_cy - 6), (cx + 16, head_cy - 18), (cx + 6, head_cy - 10)], fill=INK_BLACK)
+    draw.polygon([
+        (cx - head_r + 2, head_cy - head_r + 4),
+        (cx - head_r - 22, head_cy - head_r - 20),
+        (cx - head_r - 8, head_cy - head_r + 10),
+    ], fill=BLACK)
+    draw.polygon([
+        (cx + head_r - 2, head_cy - head_r + 4),
+        (cx + head_r + 22, head_cy - head_r - 20),
+        (cx + head_r + 8, head_cy - head_r + 10),
+    ], fill=BLACK)
+    draw.line([(cx - head_r - 20, head_cy - head_r - 18), (cx - head_r - 14, head_cy - head_r - 12)],
+              fill=HILITE, width=1)
+    draw.line([(cx + head_r + 20, head_cy - head_r - 18), (cx + head_r + 14, head_cy - head_r - 12)],
+              fill=HILITE, width=1)
 
-    # 头发（深色覆盖上半头）
-    for y in range(head_cy - hr, head_cy):
-        for x in range(cx - hr, cx + hr + 1):
-            if (x - cx) ** 2 + (y - head_cy) ** 2 <= hr ** 2:
-                if y < head_cy - hr // 3:
-                    img.putpixel((x, y), INK_BLACK)
+    # 血眼
+    eye_y = head_cy - head_r // 4
+    for sign in (-1, 1):
+        ex = cx + sign * (head_r // 2)
+        draw.rectangle([ex - 2, eye_y - 1, ex + 2, eye_y + 1], fill=BLOOD_B)
+        img.putpixel((ex, eye_y), WHITE)
 
-    draw_chibi_face(img, draw, cx, head_cy, hr, eye_color=C_BIRD)
-
-    # 披风（两侧外扩）
-    for i in range(body_h):
-        t = i / max(1, body_h - 1)
-        y = body_bottom - body_h + i
-        half = int(14 + 8 * t)
-        for x in (cx - half, cx + half):
+    # 血披风
+    for i in range(int(total_h * 0.6)):
+        y = head_cy + head_r + i
+        if y >= S:
+            break
+        t = i / max(1, total_h * 0.6)
+        half = int(22 + 26 * t)
+        for x in (cx - half, cx + half, cx - half + 1, cx + half - 1):
             if 0 <= x < S and 0 <= y < S:
-                img.putpixel((x, y), shade(C_BOSS, 0.6))
+                img.putpixel((x, y), BLOOD if (i % 7) < 5 else shade(BLOOD, 0.5))
 
-    # 抖动阴影
-    dither_fill(img, (cx - 12, body_bottom - 10, cx + 13, body_bottom - 2),
-                shade(C_BOSS, 0.55), C_BOSS, 0.5)
+    cross_hatch(img, (cx, head_cy, S, S), BLACK, 7)
+    cross_hatch(img, (cx - 10, head_cy + 40, S, S), BLACK, 6)
+    hatch(img, (0, head_cy + 70, S, S), BLACK, 4, 1)
+    hatch(img, (cx - 20, head_cy + head_r, cx - 4, head_cy + head_r + 14), HILITE, 5, -1, False)
 
-    ink_outline(img, lambda x, y: img.getpixel((x, y))[3] > 0, C_BOSS)
+    rough_edge(img, 0.26)
+    rim_light(img)
+    ink_edge(img, BLACK)
     return img
 
 
+# ============================================================
+# 弹幕与道具
+# ============================================================
+
 def make_sword():
-    """飞剑弹幕：青白剑形，指向右上。加粗保证游戏里可见。"""
-    S = 16
+    """飞剑：细长剑形，高对比。"""
+    S = 26
     img = Image.new("RGBA", (S, S), TRANSPARENT)
     draw = ImageDraw.Draw(img)
 
-    # 剑身：粗三角（3-4px 宽）
-    draw.polygon([(1, 14), (14, 1), (14, 5), (5, 14)], fill=C_SWORD)
-    # 剑脊高光
-    draw.polygon([(3, 12), (12, 3), (12, 5), (5, 12)], fill=PAPER)
-    # 剑格（护手）
-    draw.line([(2, 10), (6, 14)], fill=INK_DARK, width=2)
-    # 剑柄
-    draw.line([(1, 12), (4, 15)], fill=INK_MID, width=2)
+    draw.polygon([(2, 23), (23, 2), (23, 7), (7, 23)], fill=LIGHT)
+    draw.line([(4, 21), (21, 4)], fill=WHITE, width=1)
+    draw.line([(6, 20), (20, 6)], fill=DARK, width=1)
+    draw.line([(3, 16), (9, 22)], fill=DARK, width=2)
+    draw.line([(1, 20), (5, 24)], fill=MID, width=2)
 
     return img
 
 
 def make_enemy_shot():
-    """敌方幽火弹：靛紫火球。"""
-    S = 16
+    """幽火弹：暗紫火球，中心高亮。"""
+    S = 20
     img = Image.new("RGBA", (S, S), TRANSPARENT)
     draw = ImageDraw.Draw(img)
     cx, cy = S // 2, S // 2
 
-    draw.ellipse([cx - 5, cy - 5, cx + 5, cy + 5], fill=C_SHOT)
-    draw.ellipse([cx - 3, cy - 3, cx + 3, cy + 3], fill=shade(C_SHOT, 1.4))
-    draw.ellipse([cx - 1, cy - 1, cx + 1, cy + 1], fill=PAPER)
+    draw.ellipse([cx - 7, cy - 7, cx + 7, cy + 7], fill=(0x3A, 0x1F, 0x5C, 255))
+    draw.ellipse([cx - 5, cy - 5, cx + 5, cy + 5], fill=(0x6B, 0x3F, 0xA8, 255))
+    draw.ellipse([cx - 3, cy - 3, cx + 3, cy + 3], fill=(0xA8, 0x7F, 0xD8, 255))
+    draw.ellipse([cx - 1, cy - 1, cx + 1, cy + 1], fill=WHITE)
 
     return img
 
 
 def make_orb():
-    """修为晶石：青光菱形，留白高光。"""
-    S = 16
+    """修为晶石：暗底 + 冷光菱形。"""
+    S = 18
     img = Image.new("RGBA", (S, S), TRANSPARENT)
     draw = ImageDraw.Draw(img)
     cx, cy = S // 2, S // 2
 
-    draw.polygon([(cx, cy - 6), (cx + 5, cy), (cx, cy + 6), (cx - 5, cy)], fill=C_ORB)
-    draw.polygon([(cx, cy - 3), (cx + 2, cy), (cx, cy + 3), (cx - 2, cy)], fill=PAPER)
+    draw.polygon([(cx, cy - 7), (cx + 5, cy), (cx, cy + 7), (cx - 5, cy)], fill=(0x1F, 0x4A, 0x42, 255))
+    draw.polygon([(cx, cy - 5), (cx + 3, cy), (cx, cy + 5), (cx - 3, cy)], fill=(0x3F, 0xA8, 0x92, 255))
+    draw.polygon([(cx, cy - 3), (cx + 1, cy), (cx, cy + 3), (cx - 1, cy)], fill=(0xA8, 0xE6, 0xD8, 255))
 
     return img
 
 
+# ============================================================
+# 障碍物
+# ============================================================
+
 def make_rock():
-    """岩石：焦墨块面，不规则多边形。"""
-    S = 32
+    """岩石：暗灰巨块，密集排线。尺寸=碰撞直径×1.1"""
+    S = 76
     img = Image.new("RGBA", (S, S), TRANSPARENT)
     draw = ImageDraw.Draw(img)
-    cx, cy = S // 2, S // 2 + 2
+    cx, cy = S // 2, S // 2 + 3
 
     pts = [
-        (cx - 12, cy + 6), (cx - 13, cy - 2), (cx - 7, cy - 10),
-        (cx + 2, cy - 12), (cx + 10, cy - 7), (cx + 13, cy + 1),
-        (cx + 9, cy + 8), (cx - 4, cy + 9),
+        (cx - 30, cy + 14), (cx - 33, cy - 5), (cx - 18, cy - 24),
+        (cx + 5, cy - 29), (cx + 26, cy - 17), (cx + 33, cy + 4),
+        (cx + 22, cy + 19), (cx - 9, cy + 22),
     ]
-    draw.polygon(pts, fill=INK_MID)
+    draw.polygon(pts, fill=MID)
 
-    # 亮面：清墨（水墨"石分三面"的受光面）
-    draw.polygon(
-        [(cx - 7, cy - 10), (cx + 2, cy - 12), (cx + 3, cy - 6), (cx - 5, cy - 4)],
-        fill=INK_PALE,
-    )
-    # 中间面：淡墨
-    draw.polygon(
-        [(cx - 5, cy - 4), (cx + 3, cy - 6), (cx + 4, cy + 1), (cx - 4, cy + 2)],
-        fill=INK_LIGHT,
-    )
-    draw.polygon(
-        [(cx + 10, cy - 7), (cx + 13, cy + 1), (cx + 9, cy + 8), (cx + 5, cy + 2)],
-        fill=shade(INK_MID, 0.6),
-    )
+    draw.polygon([
+        (cx - 18, cy - 24), (cx + 5, cy - 29), (cx + 9, cy - 12), (cx - 14, cy - 9),
+    ], fill=GREY)
+    draw.polygon([
+        (cx - 14, cy - 9), (cx + 9, cy - 12), (cx + 11, cy + 3), (cx - 12, cy + 5),
+    ], fill=shade(GREY, 0.7))
 
-    # 抖动阴影
-    dither_fill(img, (cx - 11, cy + 2, cx + 10, cy + 9), INK_DARK, INK_MID, 0.5)
+    cross_hatch(img, (cx + 4, cy - 14, cx + 34, cy + 22), BLACK, 6)
+    cross_hatch(img, (cx - 30, cy + 5, cx + 24, cy + 22), BLACK, 5)
+    hatch(img, (cx - 18, cy - 24, cx + 9, cy - 10), HILITE, 5, -1, False)
 
-    ink_outline(img, lambda x, y: img.getpixel((x, y))[3] > 0, INK_MID)
+    rough_edge(img, 0.25)
+    rim_light(img)
+    ink_edge(img, BLACK)
     return img
 
 
 def make_tree():
-    """古木：墨树干 + 淡墨树冠。"""
-    S = 32
-    img = Image.new("RGBA", (S, 48), TRANSPARENT)
+    """古木：扭曲枯树干，稀疏枝叶。"""
+    W, H = 66, 100
+    img = Image.new("RGBA", (W, H), TRANSPARENT)
     draw = ImageDraw.Draw(img)
-    cx = S // 2
+    cx = W // 2
 
-    # 树干（左侧清墨受光，右侧重墨背光）
-    for y in range(28, 46):
-        half = 3 + (y - 28) // 8
-        for x in range(cx - half, cx + half + 1):
-            if x == cx - half:
-                img.putpixel((x, y), INK_PALE)
-            elif x >= cx + half - 1:
-                img.putpixel((x, y), INK_MID)
-            else:
-                img.putpixel((x, y), (0x4A, 0x35, 0x20, 255))
+    for y in range(32, H - 2):
+        t = (y - 32) / max(1, H - 34)
+        half = int(5 + 7 * t)
+        wobble = int(math.sin(t * 6) * 1.5)
+        for x in range(cx - half + wobble, cx + half + wobble + 1):
+            if 0 <= x < W:
+                rel = (x - (cx - half + wobble)) / max(1, 2 * half)
+                if rel < 0.3:
+                    img.putpixel((x, y), (0x5A, 0x42, 0x28, 255))
+                elif rel < 0.7:
+                    img.putpixel((x, y), (0x3F, 0x2E, 0x1C, 255))
+                else:
+                    img.putpixel((x, y), (0x24, 0x1A, 0x10, 255))
 
-    # 树冠（三层，由深到浅）
-    draw.ellipse([cx - 14, 4, cx + 14, 26], fill=shade((0x2E, 0x5C, 0x34, 255), 0.75))
-    draw.ellipse([cx - 11, 2, cx + 11, 20], fill=(0x2E, 0x5C, 0x34, 255))
-    draw.ellipse([cx - 7, 1, cx + 7, 14], fill=shade((0x2E, 0x5C, 0x34, 255), 1.35))
+    branches = [
+        [(cx, 42), (cx - 20, 26), (cx - 28, 16)],
+        [(cx + 2, 48), (cx + 21, 32), (cx + 26, 21)],
+        [(cx - 2, 58), (cx - 16, 45)],
+        [(cx + 3, 36), (cx + 13, 20)],
+    ]
+    for b in branches:
+        for i in range(len(b) - 1):
+            draw.line([b[i], b[i + 1]], fill=(0x2E, 0x22, 0x14, 255), width=1)
 
-    # 树冠抖动（边缘松散感）
-    dither_fill(img, (cx - 14, 18, cx + 14, 27), TRANSPARENT, (0x2E, 0x5C, 0x34, 255), 0.45)
+    for (bx, by) in [(cx - 17, 10), (cx + 16, 13), (cx - 10, 28), (cx + 8, 12)]:
+        draw.ellipse([bx - 4, by - 3, bx + 4, by + 3], fill=(0x1A, 0x2E, 0x1C, 255))
 
-    ink_outline(img, lambda x, y: img.getpixel((x, y))[3] > 0, (0x2E, 0x5C, 0x34, 255))
+    hatch(img, (cx - 7, 24, cx + 7, H - 2), BLACK, 4, 1)
+    for y in range(32, H - 2):
+        t = (y - 32) / max(1, H - 34)
+        half = int(5 + 7 * t)
+        wobble = int(math.sin(t * 6) * 1.5)
+        x = cx - half + wobble
+        if 0 <= x < W:
+            img.putpixel((x, y), (0x8A, 0x6A, 0x42, 255))
+
+    rough_edge(img, 0.2)
+    ink_edge(img, BLACK)
     return img
 
 
 def make_herb():
-    """灵草：青墨草叶，三片，加粗保证可见。"""
-    S = 24
+    """灵草：暗绿细叶，顶端幽光。尺寸=碰撞直径×1.1"""
+    S = 40
     img = Image.new("RGBA", (S, S), TRANSPARENT)
     draw = ImageDraw.Draw(img)
     cx, cy = S // 2, S - 3
 
-    GREEN = (0x2E, 0x6B, 0x3A, 255)
+    G = (0x1F, 0x4A, 0x28, 255)
 
-    # 中间叶（最粗）
-    draw.polygon([(cx - 2, cy), (cx + 2, cy), (cx + 1, cy - 13), (cx, cy - 15), (cx - 1, cy - 13)], fill=GREEN)
-    # 左叶
-    draw.polygon([(cx - 1, cy), (cx - 3, cy), (cx - 8, cy - 10), (cx - 7, cy - 12), (cx - 6, cy - 10)], fill=shade(GREEN, 0.8))
-    # 右叶
-    draw.polygon([(cx + 1, cy), (cx + 3, cy), (cx + 8, cy - 11), (cx + 7, cy - 13), (cx + 6, cy - 11)], fill=shade(GREEN, 1.2))
+    leaves = [
+        (0, -30, 2), (-9, -23, 3), (9, -24, 3), (-16, -14, 4), (16, -15, 4),
+    ]
+    for (dx, dy, w) in leaves:
+        draw.polygon([
+            (cx - 1, cy), (cx + 1, cy),
+            (cx + dx + 1, cy + dy), (cx + dx, cy + dy - 2), (cx + dx - 1, cy + dy),
+        ], fill=G)
 
-    # 顶部灵光点
-    for dx, dy in [(0, -16), (-1, -15), (1, -15)]:
-        px, py = cx + dx, cy + dy
-        if 0 <= px < S and 0 <= py < S:
-            img.putpixel((px, py), C_ORB)
+    for (dx, dy, w) in leaves:
+        draw.line([(cx, cy), (cx + dx, cy + dy)], fill=shade(G, 0.5), width=1)
 
-    ink_outline(img, lambda x, y: img.getpixel((x, y))[3] > 0, GREEN)
+    for (dx, dy, w) in leaves[:3]:
+        px_, py_ = cx + dx, cy + dy - 2
+        if 0 <= px_ < S and 0 <= py_ < S:
+            img.putpixel((px_, py_), (0x6F, 0xD8, 0xA0, 255))
+
+    rough_edge(img, 0.15)
+    ink_edge(img, BLACK)
     return img
 
 
@@ -700,11 +799,19 @@ def main():
         img = fn()
         img.save(full)
         w, h = img.size
-        # 统计不透明像素
-        opaque = sum(1 for p in img.getdata() if p[3] > 0)
-        print("  %-46s %2dx%-2d  不透明 %4d" % (rel_path, w, h, opaque))
+        px = img.load()
+        opaque = 0
+        colors = set()
+        for y in range(h):
+            for x in range(w):
+                p = px[x, y]
+                if p[3] > 0:
+                    opaque += 1
+                    colors.add((p[0], p[1], p[2]))
+        fill = opaque / (w * h) * 100
+        print("  %-44s %3dx%-3d  不透明%3d%%  色数%2d" % (rel_path, w, h, int(fill), len(colors)))
         total += 1
-    print("\n共生成 %d 张素材" % total)
+    print("\n共生成 %d 张素材（剑风传奇风格）" % total)
 
 
 if __name__ == "__main__":
