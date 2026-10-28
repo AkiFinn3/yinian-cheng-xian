@@ -57,6 +57,27 @@ const ENEMY_TYPES := {
 }
 
 # ==========================================
+# 劫难系统（阶段 11）：破境时触发
+# ==========================================
+const TRIBULATIONS := {
+	"strong":  {"name": "强敌劫",   "min": 1, "max": 2, "hp": 3.0, "dmg": 1.5, "size": 1.3, "color": "#a83232"},
+	"thunder": {"name": "天罚雷劫", "min": 1, "max": 1, "hp": 4.0, "dmg": 2.0, "size": 1.2, "color": "#4a6fd4"},
+	"demon":   {"name": "心魔劫",   "min": 1, "max": 1, "hp": 5.0, "dmg": 1.2, "size": 1.15, "color": "#7a2f8f"},
+	"three":   {"name": "斩三尸",   "min": 3, "max": 3, "hp": 3.5, "dmg": 1.4, "size": 1.0, "color": "#2f7a5f"},
+}
+
+# 化神（realm_index >= 5）之后才出现雷劫/心魔/三尸
+const LATE_TRIBULATIONS := ["thunder", "demon", "three"]
+
+# 劫难奖励三选一
+const TRIBULATION_REWARDS := [
+	{"name": "道基稳固", "desc": "最大生命 +40 并回满", "stat": "max_hp", "value": 40},
+	{"name": "杀伐果断", "desc": "剑气伤害 +50", "stat": "sword", "value": 50},
+	{"name": "身法通玄", "desc": "移速 +60，攻击间隔 -0.05 秒", "stat": "multi",
+		"effects": [{"stat": "speed", "value": 60}, {"stat": "attack_speed", "value": 0.05}]},
+]
+
+# ==========================================
 # 关卡流程（阶段 10）：5 波 + 首领
 # ==========================================
 const WAVE_TARGETS := [8, 12, 16, 20, 24]
@@ -282,6 +303,14 @@ var run_time: float = 0.0
 var game_won: bool = false
 var boss_active: bool = false
 
+# 劫难系统（阶段 11）
+var tribulation_pending: bool = false       # 劫难战进行中
+var tribulation_reward_pending: bool = false
+var tribulation_name: String = ""
+var tribulation_count: int = 0              # 第几劫
+var tribulation_reward_choices: Array[Dictionary] = []
+var pending_realm_advance: bool = false     # 劫难打赢后再推进境界
+
 
 func _ready() -> void:
 	randomize()
@@ -298,7 +327,7 @@ func _process(delta: float) -> void:
 		queue_redraw()
 		return
 
-	if upgrade_pending or path_choice_pending:
+	if upgrade_pending or path_choice_pending or tribulation_reward_pending:
 		queue_redraw()
 		return
 
@@ -511,6 +540,12 @@ func kill_enemy(index: int) -> void:
 	# 波次推进
 	wave_kills += 1
 
+	# 劫难战：全部清完则结算
+	if tribulation_pending:
+		if enemies.is_empty():
+			finish_tribulation()
+		return
+
 	if wave_kills >= int(WAVE_TARGETS[mini(wave - 1, MAX_WAVES - 1)]):
 		advance_wave()
 
@@ -649,7 +684,7 @@ func get_wave_progress() -> float:
 
 # 补满到 MAX_ENEMIES 只（首领战不补）
 func refill_enemies() -> void:
-	if boss_active:
+	if boss_active or tribulation_pending or tribulation_reward_pending:
 		return
 
 	# 第 3、5 波带精英
@@ -798,8 +833,115 @@ func choose_skill(index: int) -> void:
 	message_text = "习得功法：" + skill_name
 	message_timer = 1.5
 
+	# 破境前先打劫难
+	if should_trigger_tribulation():
+		begin_tribulation()
+		return
+
 	advance_realm()
 	after_advance()
+
+
+# ==========================================
+# 劫难战
+# ==========================================
+
+# 判断该境界破境时是否触发劫难（合道→仙道不触发）
+func should_trigger_tribulation() -> bool:
+	if immortal_stage >= 1:
+		return false
+	return stage_index >= STAGE_NAMES.size() - 1 and realm_index < REALMS.size() - 1
+
+
+# 随机选一个劫难类型
+func pick_tribulation_type() -> String:
+	# 化神（index 5）之后才用雷劫/心魔/三尸
+	if realm_index >= 5:
+		return str(LATE_TRIBULATIONS[randi_range(0, LATE_TRIBULATIONS.size() - 1)])
+	return "strong"
+
+
+# 开始劫难战
+func begin_tribulation() -> void:
+	var tname: String = pick_tribulation_type()
+	var data: Dictionary = TRIBULATIONS[tname]
+
+	tribulation_name = str(data["name"])
+	tribulation_count += 1
+	tribulation_pending = true
+	pending_realm_advance = true
+
+	var count: int = randi_range(int(data["min"]), int(data["max"]))
+
+	enemies.clear()
+
+	for i in range(count):
+		var base_type: String = pick_enemy_type()
+		var base: Dictionary = ENEMY_TYPES[base_type]
+
+		var angle := TAU * float(i) / float(count) + randf() * 0.5
+		var dist := 260.0
+		var pos: Vector2 = player_pos + Vector2(cos(angle), sin(angle)) * dist
+		pos.x = clampf(pos.x, 60.0, screen_size.x - 60.0)
+		pos.y = clampf(pos.y, 60.0, screen_size.y - 60.0)
+
+		var hp := int(float(base["max_hp"]) * float(data["hp"]))
+
+		enemies.append({
+			"type": base_type,
+			"pos": pos,
+			"speed": float(base["speed"]) * 0.9,
+			"size": float(base["size"]) * float(data["size"]),
+			"max_hp": hp,
+			"hp": hp,
+			"hit_flash": 0.0,
+			"elite": true,
+			"damage": int(float(base["damage"]) * float(data["dmg"])),
+			"reward": int(float(base["reward"]) * 3.0),
+			"tribulation": true,
+			"trib_color": str(data["color"]),
+		})
+
+	message_text = "★ " + tribulation_name + " 降临！"
+	message_timer = 3.0
+
+
+# 劫难全部打完 → 给奖励三选一
+func finish_tribulation() -> void:
+	tribulation_pending = false
+	tribulation_reward_pending = true
+
+	tribulation_reward_choices.clear()
+	for r in TRIBULATION_REWARDS:
+		tribulation_reward_choices.append({
+			"name": str(r["name"]),
+			"desc": str(r["desc"]),
+		})
+
+
+# 选择劫难奖励
+func choose_tribulation_reward(index: int) -> void:
+	if not tribulation_reward_pending:
+		return
+	if index < 0 or index >= tribulation_reward_choices.size():
+		return
+
+	var r: Dictionary = TRIBULATION_REWARDS[index]
+	apply_stat(str(r["stat"]), float(r["value"]) if r["stat"] != "multi" else 0.0)
+
+	if str(r["stat"]) == "multi":
+		for eff in r["effects"]:
+			apply_stat(str(eff["stat"]), float(eff["value"]))
+
+	tribulation_reward_pending = false
+	message_text = "劫难奖励：" + str(r["name"])
+	message_timer = 2.0
+
+	# 奖励选完才真正推进境界
+	if pending_realm_advance:
+		pending_realm_advance = false
+		advance_realm()
+		after_advance()
 
 
 # 推进境界（凡人 → 仙道 → 神仙 → 天仙）
@@ -925,6 +1067,26 @@ func get_hovered_path_index() -> int:
 	return get_path_index_at(get_viewport().get_mouse_position())
 
 
+# 劫难奖励卡片（复用功法卡片几何）
+func get_reward_card_rect(index: int) -> Rect2:
+	return get_skill_card_rect(index)
+
+
+func get_reward_index_at(pos: Vector2) -> int:
+	if not tribulation_reward_pending:
+		return -1
+	for i in range(tribulation_reward_choices.size()):
+		if get_reward_card_rect(i).has_point(pos):
+			return i
+	return -1
+
+
+func get_hovered_reward_index() -> int:
+	if not tribulation_reward_pending:
+		return -1
+	return get_reward_index_at(get_viewport().get_mouse_position())
+
+
 # 某个坐标点落在哪张卡片上，-1 表示没有
 func get_skill_index_at(pos: Vector2) -> int:
 	if not upgrade_pending:
@@ -958,10 +1120,15 @@ func _input(event: InputEvent) -> void:
 			if pindex >= 0:
 				choose_path(pindex)
 				get_viewport().set_input_as_handled()
+		elif tribulation_reward_pending:
+			var rindex := get_reward_index_at(event.position)
+			if rindex >= 0:
+				choose_tribulation_reward(rindex)
+				get_viewport().set_input_as_handled()
 		return
 
 	# 鼠标移动时刷新悬停高亮
-	if event is InputEventMouseMotion and (upgrade_pending or path_choice_pending):
+	if event is InputEventMouseMotion and (upgrade_pending or path_choice_pending or tribulation_reward_pending):
 		queue_redraw()
 
 
@@ -990,6 +1157,15 @@ func _unhandled_input(event: InputEvent) -> void:
 				KEY_3:
 					choose_path(2)
 
+		if tribulation_reward_pending:
+			match event.keycode:
+				KEY_1:
+					choose_tribulation_reward(0)
+				KEY_2:
+					choose_tribulation_reward(1)
+				KEY_3:
+					choose_tribulation_reward(2)
+
 
 func restart_game() -> void:
 	player_max_hp = 100
@@ -1005,6 +1181,13 @@ func restart_game() -> void:
 	run_time = 0.0
 	game_won = false
 	boss_active = false
+
+	tribulation_pending = false
+	tribulation_reward_pending = false
+	tribulation_name = ""
+	tribulation_count = 0
+	tribulation_reward_choices.clear()
+	pending_realm_advance = false
 	realm_index = 0
 	stage_index = 0
 	immortal_path = ""
@@ -1059,6 +1242,10 @@ func _draw() -> void:
 
 		var enemy_color: Color = ENEMY_TYPES[e["type"]]["color"]
 
+		# 劫难敌人用专属颜色
+		if e.has("trib_color"):
+			enemy_color = Color(str(e["trib_color"]))
+
 		if float(e["hit_flash"]) > 0.0:
 			enemy_color = Color.WHITE
 
@@ -1082,11 +1269,11 @@ func _draw() -> void:
 		draw_string(
 			ThemeDB.fallback_font,
 			pos + Vector2(-30.0, -size / 2.0 - 26.0),
-			str(ENEMY_TYPES[e["type"]]["name"]),
+			(str(ENEMY_TYPES[e["type"]]["name"]) if not e.has("tribulation") else "劫·" + str(ENEMY_TYPES[e["type"]]["name"])),
 			HORIZONTAL_ALIGNMENT_CENTER,
-			60,
+			90,
 			14,
-			Color("#e8d8ff")
+			Color("#ff9b4a") if e.has("tribulation") else Color("#e8d8ff")
 		)
 
 	# 玩家
@@ -1154,10 +1341,14 @@ func _draw() -> void:
 	# 波次与时间
 	var mins := int(run_time) / 60
 	var secs := int(run_time) % 60
+	var hud_title := get_wave_name()
+	if tribulation_pending:
+		hud_title = "★ " + tribulation_name
+
 	draw_string(
 		ThemeDB.fallback_font,
 		Vector2(screen_size.x - 260.0, 30),
-		get_wave_name(),
+		hud_title,
 		HORIZONTAL_ALIGNMENT_LEFT,
 		-1,
 		20,
@@ -1216,6 +1407,73 @@ func _draw() -> void:
 			200,
 			20,
 			Color("#fff1a8")
+		)
+
+	# 劫难奖励界面（暗红主题）
+	if tribulation_reward_pending:
+		draw_rect(Rect2(Vector2.ZERO, screen_size), Color(0.12, 0.02, 0.02, 0.9))
+
+		draw_string(
+			ThemeDB.fallback_font,
+			Vector2(screen_size.x / 2.0 - 200.0, screen_size.y / 2.0 - 120.0),
+			"✦ 渡 劫 成 功 ✦",
+			HORIZONTAL_ALIGNMENT_CENTER,
+			400,
+			32,
+			Color("#ff9b4a")
+		)
+
+		draw_string(
+			ThemeDB.fallback_font,
+			Vector2(screen_size.x / 2.0 - 200.0, screen_size.y / 2.0 - 86.0),
+			tribulation_name + " · 第 " + str(tribulation_count) + " 劫",
+			HORIZONTAL_ALIGNMENT_CENTER,
+			400,
+			18,
+			Color("#ffd0a0")
+		)
+
+		for i in range(tribulation_reward_choices.size()):
+			var rc := get_reward_card_rect(i)
+			var rhov := (i == get_hovered_reward_index())
+
+			if rhov:
+				draw_rect(rc, Color("#5a2a1a"))
+				draw_rect(rc, Color("#ff9b4a"), false, 3.0)
+			else:
+				draw_rect(rc, Color("#3a1a12"))
+				draw_rect(rc, Color("#c46a3a"), false, 2.0)
+
+			var rw: Dictionary = tribulation_reward_choices[i]
+
+			draw_string(
+				ThemeDB.fallback_font,
+				Vector2(rc.position.x + 14.0, rc.position.y + 24.0),
+				str(i + 1) + ". " + str(rw["name"]),
+				HORIZONTAL_ALIGNMENT_LEFT,
+				370,
+				18,
+				Color("#ffd0a0")
+			)
+
+			draw_string(
+				ThemeDB.fallback_font,
+				Vector2(rc.position.x + 14.0, rc.position.y + 45.0),
+				str(rw["desc"]),
+				HORIZONTAL_ALIGNMENT_LEFT,
+				370,
+				15,
+				Color.WHITE
+			)
+
+		draw_string(
+			ThemeDB.fallback_font,
+			Vector2(screen_size.x / 2.0 - 180.0, screen_size.y / 2.0 + 185.0),
+			"按键盘 1、2、3 或用鼠标点击选择",
+			HORIZONTAL_ALIGNMENT_CENTER,
+			360,
+			18,
+			Color("#ff9b4a")
 		)
 
 	# 升级界面
