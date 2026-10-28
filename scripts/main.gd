@@ -40,6 +40,11 @@ const WAVE_KILLS_PER_WAVE := Data.WAVE_KILLS_PER_WAVE
 const HUD_BAR_H := Data.HUD_BAR_H
 const HUD_ICON_SIZE := Data.HUD_ICON_SIZE
 const HUD_ICON_GAP := Data.HUD_ICON_GAP
+const OBSTACLES := Data.OBSTACLES
+const OBSTACLE_GRID := Data.OBSTACLE_GRID
+const OBSTACLE_CHANCE := Data.OBSTACLE_CHANCE
+const SCENES := Data.SCENES
+const REALM_SCENES := Data.REALM_SCENES
 
 # ==========================================
 # 《一念成仙》Godot 4.7.2
@@ -120,6 +125,13 @@ var is_game_over: bool = false
 
 # 妖兽数组（阶段 9：同屏多只）
 # 每只妖兽是一个 Dictionary：type/pos/speed/size/max_hp/hp/hit_flash
+# 障碍物（v0.16.0）：按世界格哈希生成，走到哪生成到哪
+var obstacles: Array = []
+var obstacle_cells: Dictionary = {}     # 已生成过的格子，避免重复
+
+# 场景主题（v0.16.0）
+var current_scene: String = "山门初境"
+
 # 同屏妖兽上限（v0.8.0：随波次增长）
 
 var enemies: Array[Dictionary] = []
@@ -265,8 +277,10 @@ func _process(delta: float) -> void:
 	attack_cooldown = maxf(0.0, attack_cooldown - delta)
 	message_timer = maxf(0.0, message_timer - delta)
 
+	update_scene()
 	update_player(delta)
 	update_camera()
+	update_obstacles(delta)
 	update_enemies(delta)
 	update_projectiles(delta)
 	update_orbs(delta)
@@ -317,6 +331,9 @@ func update_player(delta: float) -> void:
 	var move_vec := direction * current_speed * delta
 	player_pos += move_vec
 
+	# 障碍物碰撞：卡住不让穿过去
+	player_pos = push_out_of_obstacles(player_pos, player_size / 2.0)
+
 	# 无限地图：累计移动距离，用于提升同屏妖兽数量
 	distance_traveled += move_vec.length()
 
@@ -356,7 +373,9 @@ func update_enemies(delta: float) -> void:
 
 		var frozen := (e.has("frozen") and float(e["frozen"]) > 0.0)
 		if distance > 0.001 and not frozen:
-			e["pos"] = e["pos"] + direction.normalized() * float(e["speed"]) * speed_mul * delta
+			var next_pos: Vector2 = e["pos"] + direction.normalized() * float(e["speed"]) * speed_mul * delta
+			# 妖兽也绕不开障碍物，会被卡住（贴边滑）
+			e["pos"] = push_out_of_obstacles(next_pos, float(e["size"]) / 2.0)
 
 		var contact_distance := (player_size + float(e["size"])) / 2.0
 
@@ -444,6 +463,17 @@ func update_projectiles(delta: float) -> void:
 	for i in range(projectile_positions.size() - 1, -1, -1):
 		projectile_positions[i] += projectile_directions[i] * projectile_speed * delta
 		projectile_lifetimes[i] -= delta
+
+		# 先检查是否撞到障碍物（岩石挡住、古木可打碎）
+		if hit_obstacle_at(projectile_positions[i], projectile_damages[i]):
+			projectile_positions.remove_at(i)
+			projectile_directions.remove_at(i)
+			projectile_damages.remove_at(i)
+			projectile_lifetimes.remove_at(i)
+			projectile_is_critical.remove_at(i)
+			if i < projectile_elements.size():
+				projectile_elements.remove_at(i)
+			continue
 
 		# 找被这一发剑气命中的妖兽（取最近的一只）
 		var hit_index := -1
@@ -649,6 +679,159 @@ func update_orbs(delta: float) -> void:
 
 
 # 待拾取修为总数
+# ==========================================
+# 障碍物系统（v0.16.0）
+# 按世界坐标网格程序化生成，同一格永远出同一种东西
+# ==========================================
+
+# 当前场景名（按境界决定）
+func get_scene_name() -> String:
+	if immortal_stage >= 3:
+		return "魔界深渊"
+	if immortal_stage == 2:
+		return "天界云海·极"
+	if immortal_stage == 1:
+		return "天界云海"
+	return str(REALM_SCENES[clampi(realm_index, 0, REALM_SCENES.size() - 1)])
+
+
+# 更新场景主题（境界变化时切换）
+func update_scene() -> void:
+	var want := get_scene_name()
+	if want != current_scene:
+		current_scene = want
+
+
+# 格子坐标 → 稳定伪随机数（0.0 ~ 1.0）
+# 用格子坐标算哈希，保证同一格每次结果一致（不会来回闪烁）
+func cell_hash(cx: int, cy: int, salt: int) -> float:
+	var h: int = (cx * 73856093) ^ (cy * 19349663) ^ (salt * 83492791)
+	h = absi(h)
+	return float(h % 10000) / 10000.0
+
+
+# 为某个格子决定是否生成障碍物，生成则加入 obstacles
+func try_spawn_obstacle(cx: int, cy: int) -> void:
+	var key := str(cx) + "," + str(cy)
+	if obstacle_cells.has(key):
+		return
+	obstacle_cells[key] = true
+
+	# 玩家出生点附近不放东西，避免一开局被卡住
+	var cell_center := Vector2((float(cx) + 0.5) * OBSTACLE_GRID, (float(cy) + 0.5) * OBSTACLE_GRID)
+	if cell_center.distance_to(Vector2.ZERO) < 300.0:
+		return
+
+	if cell_hash(cx, cy, 1) >= OBSTACLE_CHANCE:
+		return
+
+	# 按权重选类型
+	var roll := cell_hash(cx, cy, 2) * 100.0
+	var picked := "rock"
+	var acc := 0.0
+	for type_name in OBSTACLES.keys():
+		acc += float(OBSTACLES[type_name]["weight"])
+		if roll <= acc:
+			picked = type_name
+			break
+
+	# 格内随机位置（用另一个盐保证不跟概率相关）
+	var ox := cell_hash(cx, cy, 3) * OBSTACLE_GRID
+	var oy := cell_hash(cx, cy, 4) * OBSTACLE_GRID
+
+	var data: Dictionary = OBSTACLES[picked]
+	obstacles.append({
+		"type": picked,
+		"pos": Vector2(float(cx) * OBSTACLE_GRID + ox, float(cy) * OBSTACLE_GRID + oy),
+		"radius": float(data["radius"]),
+		"hp": int(data["hits"]),
+		"max_hp": int(data["hits"]),
+		"flash": 0.0,
+		"cell": key,
+	})
+
+
+# 每帧维护：生成视野附近格子，清理走远的
+func update_obstacles(delta: float) -> void:
+	var view_r := maxf(screen_size.x, screen_size.y) * 0.75
+	var cx_min := int(floorf((player_pos.x - view_r) / OBSTACLE_GRID))
+	var cx_max := int(floorf((player_pos.x + view_r) / OBSTACLE_GRID))
+	var cy_min := int(floorf((player_pos.y - view_r) / OBSTACLE_GRID))
+	var cy_max := int(floorf((player_pos.y + view_r) / OBSTACLE_GRID))
+
+	for cx in range(cx_min, cx_max + 1):
+		for cy in range(cy_min, cy_max + 1):
+			try_spawn_obstacle(cx, cy)
+
+	# 清理离玩家太远的（同时把格子记录删掉，走回来能重新生成）
+	var keep_r := view_r + OBSTACLE_GRID * 2.0
+	for i in range(obstacles.size() - 1, -1, -1):
+		var o: Dictionary = obstacles[i]
+		o["flash"] = maxf(0.0, float(o["flash"]) - delta)
+		if (o["pos"] as Vector2).distance_to(player_pos) > keep_r:
+			obstacle_cells.erase(str(o["cell"]))
+			obstacles.remove_at(i)
+
+
+# 圆形推开：把 pos 推到不与障碍物重叠的位置
+func push_out_of_obstacles(pos: Vector2, radius: float) -> Vector2:
+	for o in obstacles:
+		var data: Dictionary = OBSTACLES[o["type"]]
+		if not bool(data["block"]):
+			continue
+		var orad := float(o["radius"])
+		var min_dist := orad + radius
+		var diff: Vector2 = pos - (o["pos"] as Vector2)
+		var d := diff.length()
+		if d < min_dist and d > 0.001:
+			pos = (o["pos"] as Vector2) + diff.normalized() * min_dist
+		elif d <= 0.001:
+			pos = (o["pos"] as Vector2) + Vector2(min_dist, 0.0)
+	return pos
+
+
+# 判断某点是否被障碍物挡住（给妖兽/剑气用）
+func is_blocked_at(pos: Vector2, radius: float) -> bool:
+	for o in obstacles:
+		var data: Dictionary = OBSTACLES[o["type"]]
+		if not bool(data["block"]):
+			continue
+		var min_dist := float(o["radius"]) + radius
+		if pos.distance_to(o["pos"] as Vector2) < min_dist:
+			return true
+	return false
+
+
+# 剑气打中障碍物：可破坏的扣血，打碎后灵草回血
+# 返回 true 表示剑气应该消失
+func hit_obstacle_at(pos: Vector2, damage: int) -> bool:
+	for i in range(obstacles.size() - 1, -1, -1):
+		var o: Dictionary = obstacles[i]
+		var data: Dictionary = OBSTACLES[o["type"]]
+		if pos.distance_to(o["pos"] as Vector2) >= float(o["radius"]) + 8.0:
+			continue
+
+		# 不可破坏（岩石）：挡住剑气，剑气消失
+		if not bool(data["breakable"]):
+			return true
+
+		# 可破坏（古木 / 灵草）：扣耐久
+		o["hp"] = int(o["hp"]) - 1
+		o["flash"] = 0.12
+		if int(o["hp"]) <= 0:
+			var heal := int(data["heal"])
+			if heal > 0:
+				player_hp = mini(player_max_hp, player_hp + heal)
+				message_text = "灵草回气 +" + str(heal)
+				message_timer = 0.5
+			obstacle_cells.erase(str(o["cell"]))
+			obstacles.remove_at(i)
+
+		# 只有阻挡型才让剑气消失；灵草不挡剑气，剑气继续飞
+		return bool(data["block"])
+	return false
+
+
 func get_pending_xp() -> int:
 	var total := 0
 	for o in orbs:
@@ -1777,6 +1960,9 @@ func restart_game() -> void:
 	boss_active = false
 
 	distance_traveled = 0.0
+	obstacles.clear()
+	obstacle_cells.clear()
+	current_scene = "山门初境"
 	formation_bag.clear()
 	active_formation.clear()
 	formation_tick = 0.0
@@ -1987,8 +2173,11 @@ func draw_bottom_hud() -> void:
 
 
 func _draw() -> void:
-	# 秘境背景（铺满视口）
-	draw_rect(Rect2(Vector2.ZERO, screen_size), Color("#173d32"))
+	# 场景主题背景（v0.16.0：随境界切换）
+	var scene_data: Dictionary = SCENES.get(current_scene, SCENES["山门初境"])
+	var bg_color := Color(str(scene_data["bg"]))
+	var dot_color := Color(str(scene_data["dot"]))
+	draw_rect(Rect2(Vector2.ZERO, screen_size), bg_color)
 
 	# 地面纹理：按世界坐标计算可视范围，无限滚动
 	var grid: float = 48.0
@@ -2000,9 +2189,61 @@ func _draw() -> void:
 		var gy := start_y
 		while gy < player_pos.y + screen_size.y / 2.0 + grid:
 			var sp := w2s(Vector2(gx + 20.0, gy + 20.0))
-			draw_rect(Rect2(sp, Vector2(2, 2)), Color("#285344"))
+			draw_rect(Rect2(sp, Vector2(2, 2)), dot_color)
 			gy += grid
 		gx += grid
+
+	# 障碍物（v0.16.0）
+	for o in obstacles:
+		var op: Vector2 = w2s(o["pos"])
+		var orad := float(o["radius"])
+		# 视口外跳过
+		if op.x < -orad * 2.0 or op.x > screen_size.x + orad * 2.0:
+			continue
+		if op.y < -orad * 2.0 or op.y > screen_size.y + orad * 2.0:
+			continue
+
+		var od: Dictionary = OBSTACLES[o["type"]]
+		var ocol := Color(str(od["color"]))
+		var oedge := Color(str(od["edge"]))
+		if float(o["flash"]) > 0.0:
+			ocol = Color.WHITE
+
+		# 岩石画方块，古木画三角树冠，灵草画小菱形
+		match str(o["type"]):
+			"rock":
+				draw_rect(Rect2(op - Vector2.ONE * orad, Vector2.ONE * orad * 2.0), ocol)
+				draw_rect(Rect2(op - Vector2.ONE * orad, Vector2.ONE * orad * 2.0), oedge, false, 2.0)
+			"tree":
+				draw_rect(Rect2(op - Vector2(orad * 0.18, orad * 0.9), Vector2(orad * 0.36, orad * 1.6)), ocol)
+				draw_colored_polygon(
+					PackedVector2Array([
+						op + Vector2(0.0, -orad * 1.5),
+						op + Vector2(-orad, orad * 0.25),
+						op + Vector2(orad, orad * 0.25),
+					]),
+					oedge
+				)
+			"herb":
+				draw_colored_polygon(
+					PackedVector2Array([
+						op + Vector2(0.0, -orad),
+						op + Vector2(orad, 0.0),
+						op + Vector2(0.0, orad),
+						op + Vector2(-orad, 0.0),
+					]),
+					oedge
+				)
+
+		# 可破坏的显示剩余耐久
+		if bool(od["breakable"]) and int(o["max_hp"]) > 1 and int(o["hp"]) < int(o["max_hp"]):
+			var bw := orad * 2.0
+			var bpos := op + Vector2(-orad, -orad - 10.0)
+			draw_rect(Rect2(bpos, Vector2(bw, 4)), Color("#421c31"))
+			draw_rect(
+				Rect2(bpos, Vector2(bw * float(o["hp"]) / float(o["max_hp"]), 4)),
+				Color("#6fd8a0")
+			)
 
 	# 妖兽（遍历数组绘制每一只）
 	for e in enemies:
@@ -2202,11 +2443,22 @@ func _draw() -> void:
 		Color("#b9f5d7")
 	)
 
+	# 场景名（v0.16.0）
+	draw_string(
+		ThemeDB.fallback_font,
+		Vector2(screen_size.x - 260.0, 76),
+		"境域 " + current_scene,
+		HORIZONTAL_ALIGNMENT_LEFT,
+		-1,
+		14,
+		Color("#9ecfff")
+	)
+
 	# 波次进度条
 	if not boss_active:
-		draw_rect(Rect2(Vector2(screen_size.x - 260.0, 68), Vector2(180, 8)), Color("#421c31"))
+		draw_rect(Rect2(Vector2(screen_size.x - 260.0, 86), Vector2(180, 8)), Color("#421c31"))
 		draw_rect(
-			Rect2(Vector2(screen_size.x - 260.0, 68), Vector2(180.0 * get_wave_progress(), 8)),
+			Rect2(Vector2(screen_size.x - 260.0, 86), Vector2(180.0 * get_wave_progress(), 8)),
 			Color("#ffd76e")
 		)
 

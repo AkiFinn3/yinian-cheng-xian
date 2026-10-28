@@ -323,3 +323,65 @@ const WAVE_KILLS_PER_WAVE := 20
 const HUD_BAR_H := 26.0       # 修为条高度
 const HUD_ICON_SIZE := 44.0   # 技能图标边长
 const HUD_ICON_GAP := 8.0
+
+# ---- 障碍物（v0.16.0）----
+# block: 是否阻挡玩家/妖兽/剑气；breakable: 能否被打碎；hits: 需要几下
+const OBSTACLES := {
+	"rock": {
+		"name": "岩石",
+		"block": true,
+		"breakable": false,
+		"hits": 0,
+		"radius": 34.0,
+		"color": "#4a4a52",
+		"edge": "#63636e",
+		"heal": 0,
+		"weight": 45,
+	},
+	"tree": {
+		"name": "古木",
+		"block": true,
+		"breakable": true,
+		"hits": 3,
+		"radius": 30.0,
+		"color": "#4a3520",
+		"edge": "#2e5c34",
+		"heal": 0,
+		"weight": 35,
+	},
+	"herb": {
+		"name": "灵草",
+		"block": false,
+		"breakable": true,
+		"hits": 1,
+		"radius": 18.0,
+		"color": "#2e6b3a",
+		"edge": "#6fd8a0",
+		"heal": 5,
+		"weight": 20,
+	},
+}
+
+# 障碍物生成：每 400×400 世界格 20% 概率出一个（按格子坐标哈希，同一局内固定）
+const OBSTACLE_GRID := 400.0
+const OBSTACLE_CHANCE := 0.20
+
+# ---- 场景主题（v0.16.0）----
+# 飞升前 6 个凡俗场景按境界切换；飞升后转天界，天仙入魔界
+const SCENES := {
+	"山门初境": {"bg": "#173d32", "dot": "#285344", "name": "山门初境"},
+	"幽谷灵泉": {"bg": "#123a3a", "dot": "#1e5050", "name": "幽谷灵泉"},
+	"赤岩火脉": {"bg": "#3a1f1a", "dot": "#542e26", "name": "赤岩火脉"},
+	"罡风荒原": {"bg": "#3a3220", "dot": "#54492e", "name": "罡风荒原"},
+	"寒潭冰窟": {"bg": "#1a2a3a", "dot": "#284056", "name": "寒潭冰窟"},
+	"太虚星海": {"bg": "#221a3a", "dot": "#352a54", "name": "太虚星海"},
+	"天界云海": {"bg": "#3a3320", "dot": "#564c30", "name": "天界云海"},
+	"天界云海·极": {"bg": "#4a4028", "dot": "#6b5d3a", "name": "天界云海·极"},
+	"魔界深渊": {"bg": "#1a0f1a", "dot": "#2e1a2e", "name": "魔界深渊"},
+}
+
+# 境界索引 → 场景名（0-4 各自专属，5-9 共用太虚星海）
+const REALM_SCENES := [
+	"山门初境", "幽谷灵泉", "赤岩火脉", "罡风荒原", "寒潭冰窟",
+	"太虚星海", "太虚星海", "太虚星海", "太虚星海", "太虚星海",
+]
