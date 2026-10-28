@@ -112,7 +112,7 @@ const TRIBULATION_REWARDS := [
 	{"name": "道基稳固", "desc": "最大生命 +40 并回满", "stat": "max_hp", "value": 40},
 	{"name": "杀伐果断", "desc": "剑气伤害 +50", "stat": "sword", "value": 50},
 	{"name": "身法通玄", "desc": "移速 +60，攻击间隔 -0.05 秒", "stat": "multi",
-		"effects": [{"stat": "speed", "value": 60}, {"stat": "attack_speed", "value": 0.05}]},
+		"effects": [{"stat": "speed", "value": 30}, {"stat": "attack_speed", "value": 0.05}]},
 ]
 
 # ==========================================
@@ -192,7 +192,7 @@ const SKILLS := {
 	# ---- 炼己 ----
 	"剑气诀":     {"desc": "剑气伤害 +8",    "stat": "sword", "value": 8},
 	"护体灵气":   {"desc": "减伤 1.5%",        "stat": "armor", "value": 1.5},
-	"疾风步":     {"desc": "移速 +25",       "stat": "speed", "value": 25},
+	"疾风步":     {"desc": "移速 +12",       "stat": "speed", "value": 12},
 	"凝神":       {"desc": "暴击率 +5%",     "stat": "crit",  "value": 5},
 	"吐纳诀":     {"desc": "生命回复 +0.5/秒", "stat": "regen", "value": 0.5},
 	"养气术":     {"desc": "生命上限 +20",   "stat": "max_hp", "value": 20},
@@ -201,7 +201,7 @@ const SKILLS := {
 	# ---- 筑基 ----
 	"御剑术":     {"desc": "剑气伤害 +18",   "stat": "sword", "value": 18},
 	"金钟罩":     {"desc": "减伤 2.5%",       "stat": "armor", "value": 2.5},
-	"踏云步":     {"desc": "移速 +45",       "stat": "speed", "value": 45},
+	"踏云步":     {"desc": "移速 +22",       "stat": "speed", "value": 22},
 	"心眼":       {"desc": "暴击率 +10%",    "stat": "crit",  "value": 10},
 	"周天功":     {"desc": "生命回复 +1.0/秒", "stat": "regen", "value": 1.0},
 	"固元术":     {"desc": "生命上限 +40",   "stat": "max_hp", "value": 40},
@@ -210,7 +210,7 @@ const SKILLS := {
 	# ---- 炼精 ----
 	"精元剑气":   {"desc": "剑气伤害 +26",   "stat": "sword", "value": 26},
 	"精血护体":   {"desc": "减伤 3.0%",       "stat": "armor", "value": 3.0},
-	"精行步":     {"desc": "移速 +60",       "stat": "speed", "value": 60},
+	"精行步":     {"desc": "移速 +30",       "stat": "speed", "value": 30},
 	"精觉":       {"desc": "暴击率 +13%",    "stat": "crit",  "value": 13},
 	"精元回春":   {"desc": "生命回复 +1.5/秒", "stat": "regen", "value": 1.5},
 	"精血凝体":   {"desc": "生命上限 +60",   "stat": "max_hp", "value": 60},
@@ -219,7 +219,7 @@ const SKILLS := {
 	# ---- 化炁 ----
 	"炁冲剑脉":   {"desc": "剑气伤害 +36",   "stat": "sword", "value": 36},
 	"炁盾":       {"desc": "减伤 3.5%",       "stat": "armor", "value": 3.5},
-	"罡气行云":   {"desc": "移速 +80",       "stat": "speed", "value": 80},
+	"罡气行云":   {"desc": "移速 +40",       "stat": "speed", "value": 40},
 	"炁感":       {"desc": "暴击率 +17%",    "stat": "crit",  "value": 17},
 	"炁养周天":   {"desc": "生命回复 +2.0/秒", "stat": "regen", "value": 2.0},
 	"炁凝真身":   {"desc": "生命上限 +85",   "stat": "max_hp", "value": 85},
@@ -228,7 +228,7 @@ const SKILLS := {
 	# ---- 炼炁 ----
 	"炁御剑":     {"desc": "剑气伤害 +48",   "stat": "sword", "value": 48},
 	"炁墙":       {"desc": "减伤 4.0%",       "stat": "armor", "value": 4.0},
-	"缩地成寸":   {"desc": "移速 +105",      "stat": "speed", "value": 105},
+	"缩地成寸":   {"desc": "移速 +52",      "stat": "speed", "value": 52},
 	"炁视":       {"desc": "暴击率 +22%",    "stat": "crit",  "value": 22},
 	"炼炁化生":   {"desc": "生命回复 +2.5/秒", "stat": "regen", "value": 2.5},
 	"炼炁铸体":   {"desc": "生命上限 +115",  "stat": "max_hp", "value": 115},
@@ -237,7 +237,7 @@ const SKILLS := {
 	# ---- 化神 ----
 	"神识御剑":   {"desc": "剑气伤害 +62",   "stat": "sword", "value": 62},
 	"神念护体":   {"desc": "减伤 4.5%",       "stat": "armor", "value": 4.5},
-	"神行术":     {"desc": "移速 +130",      "stat": "speed", "value": 130},
+	"神行术":     {"desc": "移速 +65",      "stat": "speed", "value": 65},
 	"神觉":       {"desc": "暴击率 +27%",    "stat": "crit",  "value": 27},
 	"神元回春":   {"desc": "生命回复 +3.0/秒", "stat": "regen", "value": 3.0},
 	"神元凝体":   {"desc": "生命上限 +150",  "stat": "max_hp", "value": 150},
@@ -246,7 +246,7 @@ const SKILLS := {
 	# ---- 炼神 ----
 	"炼神剑意":   {"desc": "剑气伤害 +80",   "stat": "sword", "value": 80},
 	"神元护体":   {"desc": "减伤 5.0%",       "stat": "armor", "value": 5.0},
-	"踏虚而行":   {"desc": "移速 +160",      "stat": "speed", "value": 160},
+	"踏虚而行":   {"desc": "移速 +80",      "stat": "speed", "value": 80},
 	"洞神":       {"desc": "暴击率 +33%",    "stat": "crit",  "value": 33},
 	"炼神养元":   {"desc": "生命回复 +3.5/秒", "stat": "regen", "value": 3.5},
 	"炼神固本":   {"desc": "生命上限 +190",  "stat": "max_hp", "value": 190},
@@ -255,7 +255,7 @@ const SKILLS := {
 	# ---- 返虚 ----
 	"虚空剑意":   {"desc": "剑气伤害 +100",  "stat": "sword", "value": 100},
 	"返虚护体":   {"desc": "减伤 5.5%",       "stat": "armor", "value": 5.5},
-	"返虚游":     {"desc": "移速 +195",      "stat": "speed", "value": 195},
+	"返虚游":     {"desc": "移速 +97",      "stat": "speed", "value": 97},
 	"洞虚":       {"desc": "暴击率 +39%",    "stat": "crit",  "value": 39},
 	"返虚化生":   {"desc": "生命回复 +4.0/秒", "stat": "regen", "value": 4.0},
 	"返虚凝体":   {"desc": "生命上限 +240",  "stat": "max_hp", "value": 240},
@@ -264,7 +264,7 @@ const SKILLS := {
 	# ---- 炼虚 ----
 	"虚剑破空":   {"desc": "剑气伤害 +125",  "stat": "sword", "value": 125},
 	"虚元金身":   {"desc": "减伤 6.0%",       "stat": "armor", "value": 6.0},
-	"逍遥游":     {"desc": "移速 +235",      "stat": "speed", "value": 235},
+	"逍遥游":     {"desc": "移速 +117",      "stat": "speed", "value": 117},
 	"虚瞳":       {"desc": "暴击率 +46%",    "stat": "crit",  "value": 46},
 	"炼虚长生":   {"desc": "生命回复 +4.5/秒", "stat": "regen", "value": 4.5},
 	"炼虚铸体":   {"desc": "生命上限 +300",  "stat": "max_hp", "value": 300},
@@ -273,7 +273,7 @@ const SKILLS := {
 	# ---- 合道 ----
 	"大道剑诀":   {"desc": "剑气伤害 +155",  "stat": "sword", "value": 155},
 	"合道金身":   {"desc": "减伤 6.5%",       "stat": "armor", "value": 6.5},
-	"天地同游":   {"desc": "移速 +280",      "stat": "speed", "value": 280},
+	"天地同游":   {"desc": "移速 +140",      "stat": "speed", "value": 140},
 	"天眼":       {"desc": "暴击率 +54%",    "stat": "crit",  "value": 54},
 	"合道长生":   {"desc": "生命回复 +5.0/秒", "stat": "regen", "value": 5.0},
 	"合道真身":   {"desc": "生命上限 +380",  "stat": "max_hp", "value": 380},
@@ -285,14 +285,14 @@ const SKILLS := {
 	"不坏仙躯":   {"desc": "最大生命 +120 并回满，减伤 +85", "stat": "multi", "effects": [
 		{"stat": "max_hp", "value": 120}, {"stat": "armor", "value": 8.0}]},
 	"咫尺天涯":   {"desc": "移速 +340，攻击间隔 -0.10 秒", "stat": "multi", "effects": [
-		{"stat": "speed", "value": 340}, {"stat": "attack_speed", "value": 0.10}]},
+		{"stat": "speed", "value": 170}, {"stat": "attack_speed", "value": 0.10}]},
 	# ---- 天仙 ----
 	"万剑朝宗":   {"desc": "剑气 +300，暴击 +30%", "stat": "multi", "effects": [
 		{"stat": "sword", "value": 300}, {"stat": "crit", "value": 30}]},
 	"太虚不灭":   {"desc": "最大生命 +200 并回满，减伤 +120", "stat": "multi", "effects": [
 		{"stat": "max_hp", "value": 200}, {"stat": "armor", "value": 10.0}]},
 	"逍遥无极":   {"desc": "移速 +450，攻击间隔 -0.15 秒", "stat": "multi", "effects": [
-		{"stat": "speed", "value": 450}, {"stat": "attack_speed", "value": 0.15}]},
+		{"stat": "speed", "value": 225}, {"stat": "attack_speed", "value": 0.15}]},
 	# ---- 属性法术（化炁起出现） ----
 	"烈焰剑气":   {"desc": "剑气附带灼烧：每秒 -8 血，3 秒", "stat": "element", "value": 0, "element": "fire"},
 	"寒冰剑气":   {"desc": "剑气附带减速 35%，2 秒", "stat": "element", "value": 0, "element": "ice"},
@@ -1219,7 +1219,12 @@ func apply_stat(stat: String, value: float) -> void:
 		"armor":
 			damage_reduction = minf(0.7, damage_reduction + value / 100.0)
 		"speed":
-			speed_bonus += value
+			# 软上限：超过 600 后收益减半，避免后期失控
+			var current_total := player_speed + speed_bonus
+			if current_total >= 600.0:
+				speed_bonus += value * 0.5
+			else:
+				speed_bonus += value
 		"crit":
 			crit_bonus = minf(100.0, crit_bonus + value)
 		"max_hp":
