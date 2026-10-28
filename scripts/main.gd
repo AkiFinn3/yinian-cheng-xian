@@ -256,6 +256,11 @@ func _process(delta: float) -> void:
 	# UI 自适应：窗口小于 1100 宽时按比例缩小
 	ui_scale = clampf(screen_size.x / 1280.0, 0.65, 1.0)
 
+	# 槽位选择界面：不跑游戏逻辑
+	if not slot_select_mode.is_empty():
+		queue_redraw()
+		return
+
 	# 主菜单：不跑任何游戏逻辑
 	if in_main_menu:
 		queue_redraw()
@@ -1877,6 +1882,17 @@ func get_hovered_skill_index() -> int:
 
 
 func _input(event: InputEvent) -> void:
+	# 槽位选择鼠标操作（v0.19.0）
+	if not slot_select_mode.is_empty():
+		if event is InputEventMouseButton and event.pressed and event.button_index == MOUSE_BUTTON_LEFT:
+			var si := get_slot_index_at(event.position)
+			if si >= 0:
+				select_slot(si)
+				get_viewport().set_input_as_handled()
+		elif event is InputEventMouseMotion:
+			queue_redraw()
+		return
+
 	# 主菜单鼠标操作（v0.17.0）
 	if in_main_menu:
 		if event is InputEventMouseButton and event.pressed and event.button_index == MOUSE_BUTTON_LEFT:
@@ -1929,6 +1945,29 @@ func _input(event: InputEvent) -> void:
 
 
 func _unhandled_input(event: InputEvent) -> void:
+	# 槽位选择界面（v0.19.0）优先
+	if not slot_select_mode.is_empty():
+		if event is InputEventKey and event.pressed and not event.echo:
+			match event.keycode:
+				KEY_LEFT, KEY_A:
+					slot_hover = (slot_hover + SAVE_SLOT_COUNT - 1) % SAVE_SLOT_COUNT
+				KEY_RIGHT, KEY_D:
+					slot_hover = (slot_hover + 1) % SAVE_SLOT_COUNT
+				KEY_UP, KEY_W:
+					slot_hover = (slot_hover + SAVE_SLOT_COUNT - 3) % SAVE_SLOT_COUNT
+				KEY_DOWN, KEY_S:
+					slot_hover = (slot_hover + 3) % SAVE_SLOT_COUNT
+				KEY_1, KEY_2, KEY_3, KEY_4, KEY_5:
+					slot_hover = event.keycode - KEY_1
+					select_slot(slot_hover)
+				KEY_ENTER, KEY_KP_ENTER, KEY_SPACE:
+					select_slot(slot_hover)
+				KEY_ESCAPE:
+					slot_select_mode = ""
+					if not in_main_menu:
+						is_paused = true
+		return
+
 	# 主菜单（v0.17.0）
 	if in_main_menu:
 		if event is InputEventKey and event.pressed and not event.echo:
@@ -2027,23 +2066,185 @@ func _unhandled_input(event: InputEvent) -> void:
 # 主菜单与暂停（v0.17.0）
 # ==========================================
 
-# 主菜单选项：0 开始游戏 / 1 继续游戏 / 2 退出
+# 主菜单选项：0 开始游戏（选新槽位）/ 1 载入存档（选已有槽位）/ 2 退出
 func select_main_menu(index: int) -> void:
 	match index:
 		0:
+			# 新游戏：让玩家选一个槽位
+			slot_select_mode = "new"
+			slot_hover = 0
+		1:
+			# 载入：只在有存档的槽位里选
+			if not has_any_save():
+				message_text = "没有找到任何存档"
+				message_timer = 2.0
+				return
+			slot_select_mode = "load"
+			var latest := find_latest_slot()
+			slot_hover = maxi(0, latest - 1)
+		2:
+			get_tree().quit()
+
+
+# 槽位选择确认
+func select_slot(index: int) -> void:
+	var slot := index + 1
+	match slot_select_mode:
+		"new":
+			# 新开：该槽位有旧存档则覆盖
+			current_slot = slot
+			delete_slot(slot)
+			slot_select_mode = ""
 			in_main_menu = false
 			is_paused = false
 			restart_game()
-		1:
-			in_main_menu = false
-			is_paused = false
-			if not load_game():
-				# 没有存档或存档损坏 → 按新开处理
-				restart_game()
-				message_text = "未找到存档，已重新开始"
+		"load":
+			if not has_slot_save(slot):
+				return
+			if load_game(slot):
+				slot_select_mode = ""
+				in_main_menu = false
+				is_paused = false
+			else:
+				message_text = "存档损坏，无法载入"
 				message_timer = 2.0
-		2:
-			get_tree().quit()
+		"save":
+			var ok := save_game(slot)
+			slot_select_mode = ""
+			message_text = "已保存到槽位 " + str(slot) if ok else "当前状态无法保存"
+			message_timer = 2.0
+
+
+# 槽位卡片矩形（2 行 × 3 列，最后一格留空）
+func get_slot_rect(index: int) -> Rect2:
+	var w := 300.0 * ui_scale
+	var h := 96.0 * ui_scale
+	var gap := 16.0 * ui_scale
+	var col := index % 3
+	var row := index / 3
+	var total_w := w * 3.0 + gap * 2.0
+	var start_x := (screen_size.x - total_w) / 2.0
+	var start_y := screen_size.y / 2.0 - 60.0 * ui_scale
+	return Rect2(
+		Vector2(start_x + float(col) * (w + gap), start_y + float(row) * (h + gap)),
+		Vector2(w, h)
+	)
+
+
+func get_slot_index_at(pos: Vector2) -> int:
+	for i in range(SAVE_SLOT_COUNT):
+		if get_slot_rect(i).has_point(pos):
+			return i
+	return -1
+
+
+func get_hovered_slot_index() -> int:
+	var mouse := get_viewport().get_mouse_position()
+	return get_slot_index_at(mouse)
+
+
+# 画槽位选择界面
+func draw_slot_select() -> void:
+	draw_rect(Rect2(Vector2.ZERO, screen_size), Color("#0d1512"))
+
+	var title := ""
+	match slot_select_mode:
+		"new":  title = "选择存档槽位（新游戏）"
+		"load": title = "选择要载入的存档"
+		"save": title = "选择保存位置"
+
+	draw_string(
+		ThemeDB.fallback_font,
+		Vector2(0, screen_size.y / 2.0 - 130.0 * ui_scale),
+		title,
+		HORIZONTAL_ALIGNMENT_CENTER,
+		screen_size.x,
+		30,
+		Color("#ffd76e")
+	)
+
+	var hovered := get_hovered_slot_index()
+
+	for i in range(SAVE_SLOT_COUNT):
+		var rect := get_slot_rect(i)
+		var slot := i + 1
+		var info := get_slot_info(slot)
+		var is_hover := (i == hovered) or (i == slot_hover and hovered < 0)
+		var is_current := (slot == current_slot)
+
+		# 载入模式下空槽位变灰
+		var disabled := (slot_select_mode == "load" and info.is_empty())
+
+		if disabled:
+			draw_rect(rect, Color("#121a16"))
+			draw_rect(rect, Color("#2a3d33"), false, 1.0)
+		elif is_hover:
+			draw_rect(rect, Color("#1e3a2e"))
+			draw_rect(rect, Color("#ffd76e"), false, 3.0)
+		else:
+			draw_rect(rect, Color("#16261f"))
+			draw_rect(rect, Color("#3f6b55"), false, 1.0)
+
+		# 槽位编号
+		draw_string(
+			ThemeDB.fallback_font,
+			Vector2(rect.position.x + 14.0, rect.position.y + 26.0),
+			"槽位 " + str(slot) + ("（当前）" if is_current and not info.is_empty() else ""),
+			HORIZONTAL_ALIGNMENT_LEFT,
+			rect.size.x - 28.0,
+			17,
+			Color("#ffd76e") if is_hover else Color("#9ecfff")
+		)
+
+		if info.is_empty():
+			draw_string(
+				ThemeDB.fallback_font,
+				Vector2(rect.position.x + 14.0, rect.position.y + 54.0),
+				"— 空 —",
+				HORIZONTAL_ALIGNMENT_LEFT,
+				rect.size.x - 28.0,
+				16,
+				Color("#3f5a4b")
+			)
+		else:
+			draw_string(
+				ThemeDB.fallback_font,
+				Vector2(rect.position.x + 14.0, rect.position.y + 52.0),
+				str(info.get("label", "?")),
+				HORIZONTAL_ALIGNMENT_LEFT,
+				rect.size.x - 28.0,
+				16,
+				Color("#c8e8d8")
+			)
+			draw_string(
+				ThemeDB.fallback_font,
+				Vector2(rect.position.x + 14.0, rect.position.y + 76.0),
+				str(info.get("saved_at", "")),
+				HORIZONTAL_ALIGNMENT_LEFT,
+				rect.size.x - 28.0,
+				13,
+				Color("#6f9f85")
+			)
+
+	draw_string(
+		ThemeDB.fallback_font,
+		Vector2(0, screen_size.y - 96.0),
+		"存档位置：" + get_save_dir(),
+		HORIZONTAL_ALIGNMENT_CENTER,
+		screen_size.x,
+		13,
+		Color("#4f7f65")
+	)
+
+	draw_string(
+		ThemeDB.fallback_font,
+		Vector2(0, screen_size.y - 60.0),
+		"← → ↑ ↓ 或鼠标选择    Enter 确认    ESC 返回",
+		HORIZONTAL_ALIGNMENT_CENTER,
+		screen_size.x,
+		15,
+		Color("#5f8f75")
+	)
 
 
 # 暂停选项：0 继续 / 1 保存进度 / 2 返回主菜单
@@ -2052,13 +2253,9 @@ func select_pause_menu(index: int) -> void:
 		0:
 			is_paused = false
 		1:
-			# 手动保存（暂停中也能存，先临时放开暂停标记）
-			is_paused = false
-			var ok := save_game()
-			is_paused = true
-			message_text = "进度已保存" if ok else "当前状态无法保存"
-			message_timer = 2.0
-			pause_selection = 0
+			# 手动保存：打开槽位选择
+			slot_select_mode = "save"
+			slot_hover = current_slot - 1
 		2:
 			# 返回主菜单前自动存一次
 			is_paused = false
@@ -2129,15 +2326,14 @@ func draw_main_menu() -> void:
 		Color("#7fbfa0")
 	)
 
-	var labels := ["开始游戏", "继续游戏", "退出"]
+	var labels := ["开始游戏", "载入存档", "退出"]
 	var hovered := get_hovered_menu_index()
-	var info := get_save_info()
-	var has_saved := not info.is_empty()
+	var has_saved := has_any_save()
 
 	for i in range(3):
 		var rect := get_menu_item_rect(i)
 		var is_hover := (i == hovered) or (i == menu_selection and hovered < 0)
-		# 没有存档时「继续游戏」变灰
+		# 没有任何存档时「载入存档」变灰
 		var disabled := (i == 1 and not has_saved)
 
 		if disabled:
@@ -2166,17 +2362,36 @@ func draw_main_menu() -> void:
 			label_color
 		)
 
-	# 存档摘要（显示在「继续游戏」下方）
+	# 存档概览（显示在选项下方）
+	var summary_y := get_menu_item_rect(2).position.y + get_menu_item_rect(2).size.y + 34.0
 	if has_saved:
-		draw_string(
-			ThemeDB.fallback_font,
-			Vector2(0, get_menu_item_rect(2).position.y + get_menu_item_rect(2).size.y + 34.0),
-			"存档：" + str(info.get("label", "?")) + "     " + str(info.get("saved_at", "")),
-			HORIZONTAL_ALIGNMENT_CENTER,
-			screen_size.x,
-			14,
-			Color("#6f9f85")
-		)
+		var lines: Array[String] = []
+		for i in range(1, SAVE_SLOT_COUNT + 1):
+			var si := get_slot_info(i)
+			if si.is_empty():
+				continue
+			lines.append("槽位" + str(i) + "：" + str(si.get("label", "?")) + "  " + str(si.get("saved_at", "")))
+		for k in range(lines.size()):
+			draw_string(
+				ThemeDB.fallback_font,
+				Vector2(0, summary_y + float(k) * 18.0),
+				lines[k],
+				HORIZONTAL_ALIGNMENT_CENTER,
+				screen_size.x,
+				13,
+				Color("#6f9f85")
+			)
+
+	# 存档位置提示
+	draw_string(
+		ThemeDB.fallback_font,
+		Vector2(0, screen_size.y - 40.0),
+		"存档位置：" + get_save_dir(),
+		HORIZONTAL_ALIGNMENT_CENTER,
+		screen_size.x,
+		12,
+		Color("#3f6b55")
+	)
 
 	draw_string(
 		ThemeDB.fallback_font,
@@ -2249,28 +2464,70 @@ func get_hovered_pause_index() -> int:
 
 
 # ==========================================
-# 存档系统（v0.18.0）
-# 单槽位 JSON，存在 user://save.json
+# 存档系统（v0.19.0：5 个槽位）
+# 每个槽位一个 JSON：user://save_1.json ~ user://save_5.json
 # 只存「安全点」：升级/劫难/仙道界面中不存，避免读到半截状态
 # 妖兽、晶石、剑气、障碍物属于临时状态，不存档；读档后按当前境界重新生成
 # ==========================================
 
-const SAVE_PATH := "user://save.json"
-const SAVE_VERSION := 1
+const SAVE_VERSION := 2          # v0.19.0 升到 2（结构加入 slot 字段）
+const SAVE_SLOT_COUNT := 5
 const AUTOSAVE_INTERVAL := 15.0
 
 var save_timer: float = 0.0
+var current_slot: int = 1        # 当前使用的槽位（1-5）
+var slot_select_mode: String = ""  # ""=无 / "load"=读档选择 / "save"=存档选择
+var slot_hover: int = 0
+
+
+# 槽位 → 文件路径
+func slot_path(slot: int) -> String:
+	return "user://save_" + str(clampi(slot, 1, SAVE_SLOT_COUNT)) + ".json"
+
+
+# 存档所在目录（给玩家看的位置）
+func get_save_dir() -> String:
+	return ProjectSettings.globalize_path("user://")
 
 
 func has_save() -> bool:
-	return FileAccess.file_exists(SAVE_PATH)
+	return has_slot_save(current_slot)
 
 
-# 读取存档摘要（不加载整局游戏，只给主菜单显示用）
-func get_save_info() -> Dictionary:
-	if not has_save():
+func has_slot_save(slot: int) -> bool:
+	return FileAccess.file_exists(slot_path(slot))
+
+
+# 任一槽位有存档
+func has_any_save() -> bool:
+	for i in range(1, SAVE_SLOT_COUNT + 1):
+		if has_slot_save(i):
+			return true
+	return false
+
+
+# 找最近使用的槽位（返回 0 表示没有任何存档）
+# 用文件修改时间判断，比 JSON 里的秒级时间戳可靠（同一秒内多次保存也能分辨）
+func find_latest_slot() -> int:
+	var best_slot := 0
+	var best_mtime := -1.0
+	for i in range(1, SAVE_SLOT_COUNT + 1):
+		var path := slot_path(i)
+		if not FileAccess.file_exists(path):
+			continue
+		var mtime := FileAccess.get_modified_time(path)
+		if float(mtime) > best_mtime:
+			best_mtime = float(mtime)
+			best_slot = i
+	return best_slot
+
+
+# 读取某个槽位的摘要（不加载整局游戏，只给菜单显示用）
+func get_slot_info(slot: int) -> Dictionary:
+	var path := slot_path(slot)
+	if not FileAccess.file_exists(path):
 		return {}
-	var file := FileAccess.open(SAVE_PATH, FileAccess.READ)
+	var file := FileAccess.open(path, FileAccess.READ)
 	if file == null:
 		return {}
 	var text := file.get_as_text()
@@ -2281,9 +2538,18 @@ func get_save_info() -> Dictionary:
 	return parsed
 
 
+func get_save_info() -> Dictionary:
+	return get_slot_info(current_slot)
+
+
 func delete_save() -> void:
-	if has_save():
-		DirAccess.remove_absolute(SAVE_PATH)
+	delete_slot(current_slot)
+
+
+func delete_slot(slot: int) -> void:
+	var path := slot_path(slot)
+	if FileAccess.file_exists(path):
+		DirAccess.remove_absolute(path)
 
 
 # JSON 数组 → 字符串数组（JSON 读回来是普通 Array，不能直接赋给 Array[String]）
@@ -2295,7 +2561,7 @@ func to_string_array(value) -> Array[String]:
 	return out
 
 
-func save_game() -> bool:
+func save_game(slot: int = -1) -> bool:
 	# 只在安全时机存档
 	if in_main_menu or is_paused or is_game_over:
 		return false
@@ -2303,8 +2569,11 @@ func save_game() -> bool:
 			or artifact_drop_pending or tribulation_pending or boss_active:
 		return false
 
+	var target_slot := current_slot if slot < 0 else clampi(slot, 1, SAVE_SLOT_COUNT)
+
 	var data := {
 		"version": SAVE_VERSION,
+		"slot": target_slot,
 		"saved_at": Time.get_datetime_string_from_system(),
 		"label": get_full_realm_name() + " · 第" + str(wave) + "波",
 		"player": {
@@ -2353,19 +2622,21 @@ func save_game() -> bool:
 		},
 	}
 
-	var file := FileAccess.open(SAVE_PATH, FileAccess.WRITE)
+	var file := FileAccess.open(slot_path(target_slot), FileAccess.WRITE)
 	if file == null:
 		return false
 	file.store_string(JSON.stringify(data, "\t"))
 	file.close()
+	current_slot = target_slot
 	return true
 
 
-func load_game() -> bool:
-	if not has_save():
+func load_game(slot: int = -1) -> bool:
+	var target_slot := current_slot if slot < 0 else clampi(slot, 1, SAVE_SLOT_COUNT)
+	if not has_slot_save(target_slot):
 		return false
 
-	var file := FileAccess.open(SAVE_PATH, FileAccess.READ)
+	var file := FileAccess.open(slot_path(target_slot), FileAccess.READ)
 	if file == null:
 		return false
 	var text := file.get_as_text()
@@ -2436,6 +2707,7 @@ func load_game() -> bool:
 	obstacle_cells.clear()
 	refill_enemies()
 	save_timer = 0.0
+	current_slot = target_slot
 	return true
 
 
@@ -2671,6 +2943,11 @@ func draw_bottom_hud() -> void:
 
 
 func _draw() -> void:
+	# 槽位选择独占画面（v0.19.0）
+	if not slot_select_mode.is_empty():
+		draw_slot_select()
+		return
+
 	# 主菜单独占画面（v0.17.0）
 	if in_main_menu:
 		draw_main_menu()
