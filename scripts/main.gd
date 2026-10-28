@@ -408,7 +408,7 @@ var learned_skills: Array[String] = []
 var screen_size: Vector2 = Vector2(960, 600)
 var camera_offset: Vector2 = Vector2.ZERO   # 世界坐标 → 屏幕坐标的偏移
 var ui_scale: float = 1.0                   # UI 缩放（小窗口自动缩小）
-var distance_traveled: float = 0.0          # 累计移动距离（无限地图：走得越远怪越多）
+var distance_traveled: float = 0.0          # 累计移动距离（保留，暂不参与计算）
 var message_timer: float = 0.0
 var message_text: String = ""
 
@@ -1043,8 +1043,9 @@ func get_wave_progress() -> float:
 # 每移动 2000px 多 1 只，最多贡献 +8 只
 func get_max_enemies() -> int:
 	var wave_bonus := (wave - 1) / 2
-	var explore_bonus := mini(int(distance_traveled / 2000.0), 8)
-	return mini(BASE_MAX_ENEMIES + wave_bonus + explore_bonus, 30)
+	# 时长成长：每 60 秒 +1 只，最多 +8 只
+	var time_bonus := mini(int(run_time / 60.0), 8)
+	return mini(BASE_MAX_ENEMIES + wave_bonus + time_bonus, 30)
 
 
 # 补满到当前上限（首领战不补）
