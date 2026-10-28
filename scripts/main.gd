@@ -1,0 +1,603 @@
+
+extends Node2D
+
+# ==========================================
+# 《一念成仙》Godot 4.7.2
+# 第六阶段：自动剑气弹幕
+# ==========================================
+
+# 玩家属性
+var player_pos: Vector2 = Vector2.ZERO
+var player_speed: float = 230.0
+var player_size: float = 24.0
+var player_max_hp: int = 100
+var player_hp: int = 100
+var damage_cooldown: float = 0.0
+var is_game_over: bool = false
+
+# 妖兽属性
+var enemy_pos: Vector2 = Vector2(500, 300)
+var enemy_speed: float = 75.0
+var enemy_size: float = 34.0
+var enemy_max_hp: int = 100
+var enemy_hp: int = 100
+
+# 自动攻击属性
+var attack_range: float = 420.0
+var attack_damage: int = 20
+var attack_interval: float = 0.55
+var attack_cooldown: float = 0.0
+
+# 剑气属性
+var projectile_speed: float = 460.0
+var projectile_size: float = 7.0
+var projectile_lifetime: float = 1.5
+var projectile_positions: Array[Vector2] = []
+var projectile_directions: Array[Vector2] = []
+var projectile_damages: Array[int] = []
+var projectile_lifetimes: Array[float] = []
+var projectile_is_critical: Array[bool] = []
+var enemy_hit_flash: float = 0.0
+
+# 修为与升级
+var kill_count: int = 0
+var cultivation: int = 0
+var level: int = 1
+var next_level_xp: int = 30
+var upgrade_pending: bool = false
+
+# 功法加成
+var sword_bonus: int = 0
+var armor_reduction: int = 0
+var speed_bonus: float = 0.0
+
+# 三选一功法
+var skill_choices: Array[Dictionary] = []
+var learned_skills: Array[String] = []
+
+# 游戏界面
+var screen_size: Vector2 = Vector2(960, 600)
+var message_timer: float = 0.0
+var message_text: String = ""
+
+
+func _ready() -> void:
+	randomize()
+	screen_size = get_viewport_rect().size
+	player_pos = screen_size / 2.0
+	spawn_enemy()
+	queue_redraw()
+
+
+func _process(delta: float) -> void:
+	screen_size = get_viewport_rect().size
+
+	if is_game_over:
+		queue_redraw()
+		return
+
+	if upgrade_pending:
+		queue_redraw()
+		return
+
+	damage_cooldown = maxf(0.0, damage_cooldown - delta)
+	enemy_hit_flash = maxf(0.0, enemy_hit_flash - delta)
+	attack_cooldown = maxf(0.0, attack_cooldown - delta)
+	message_timer = maxf(0.0, message_timer - delta)
+
+	update_player(delta)
+	update_enemy(delta)
+	update_projectiles(delta)
+	update_auto_attack()
+
+	queue_redraw()
+
+
+# ==========================================
+# 玩家移动
+# ==========================================
+
+func update_player(delta: float) -> void:
+	var direction := Vector2.ZERO
+
+	if Input.is_key_pressed(KEY_W) or Input.is_action_pressed("ui_up"):
+		direction.y -= 1.0
+	if Input.is_key_pressed(KEY_S) or Input.is_action_pressed("ui_down"):
+		direction.y += 1.0
+	if Input.is_key_pressed(KEY_A) or Input.is_action_pressed("ui_left"):
+		direction.x -= 1.0
+	if Input.is_key_pressed(KEY_D) or Input.is_action_pressed("ui_right"):
+		direction.x += 1.0
+
+	if direction.length() > 0.0:
+		direction = direction.normalized()
+
+	var current_speed := player_speed + speed_bonus
+	player_pos += direction * current_speed * delta
+
+	var margin := player_size / 2.0
+	player_pos.x = clampf(player_pos.x, margin, screen_size.x - margin)
+	player_pos.y = clampf(player_pos.y, margin, screen_size.y - margin)
+
+
+# ==========================================
+# 妖兽移动与接触伤害
+# ==========================================
+
+func update_enemy(delta: float) -> void:
+	var direction := player_pos - enemy_pos
+	var distance := direction.length()
+
+	if distance > 0.001:
+		enemy_pos += direction.normalized() * enemy_speed * delta
+
+	var contact_distance := (player_size + enemy_size) / 2.0
+
+	if distance < contact_distance and damage_cooldown <= 0.0:
+		var actual_damage := maxi(1, 10 - armor_reduction)
+		player_hp -= actual_damage
+		damage_cooldown = 0.8
+
+		message_text = "受到伤害 -" + str(actual_damage)
+		message_timer = 0.5
+
+		if player_hp <= 0:
+			player_hp = 0
+			is_game_over = true
+
+
+# ==========================================
+# 自动寻找妖兽并发射剑气
+# ==========================================
+
+func update_auto_attack() -> void:
+	if attack_cooldown > 0.0:
+		return
+
+	var direction := enemy_pos - player_pos
+	var distance := direction.length()
+
+	if distance > attack_range:
+		return
+
+	if distance <= 0.001:
+		return
+
+	fire_sword_energy(direction.normalized())
+	attack_cooldown = attack_interval
+
+
+func fire_sword_energy(direction: Vector2) -> void:
+	var damage: int = attack_damage + sword_bonus
+	var is_critical: bool = randf() < 0.15
+
+	if is_critical:
+		damage *= 2
+
+	projectile_positions.append(player_pos + direction * 18.0)
+	projectile_directions.append(direction)
+	projectile_damages.append(damage)
+	projectile_lifetimes.append(projectile_lifetime)
+	projectile_is_critical.append(is_critical)
+
+# ==========================================
+# 剑气飞行、命中与消失
+# ==========================================
+
+func update_projectiles(delta: float) -> void:
+	for i in range(projectile_positions.size() - 1, -1, -1):
+		projectile_positions[i] += projectile_directions[i] * projectile_speed * delta
+		projectile_lifetimes[i] -= delta
+
+		var hit_distance := (enemy_size / 2.0) + projectile_size
+
+		if projectile_positions[i].distance_to(enemy_pos) <= hit_distance:
+			var damage: int = projectile_damages[i]
+			var is_critical: bool = projectile_is_critical[i]
+
+			enemy_hp -= damage
+			enemy_hit_flash = 0.12
+
+			if is_critical:
+				message_text = "暴击！伤害 -" + str(damage)
+			else:
+				message_text = "剑气命中 -" + str(damage)
+
+			message_timer = 0.6
+
+			projectile_positions.remove_at(i)
+			projectile_directions.remove_at(i)
+			projectile_damages.remove_at(i)
+			projectile_lifetimes.remove_at(i)
+			projectile_is_critical.remove_at(i)
+
+			if enemy_hp <= 0:
+				kill_enemy()
+
+			continue
+
+		var p := projectile_positions[i]
+		var outside_screen := (
+			p.x < -20.0
+			or p.x > screen_size.x + 20.0
+			or p.y < -20.0
+			or p.y > screen_size.y + 20.0
+		)
+
+		if projectile_lifetimes[i] <= 0.0 or outside_screen:
+			projectile_positions.remove_at(i)
+			projectile_directions.remove_at(i)
+			projectile_damages.remove_at(i)
+			projectile_lifetimes.remove_at(i)
+
+
+# ==========================================
+# 妖兽死亡、修为奖励与重生
+# ==========================================
+
+func kill_enemy() -> void:
+	kill_count += 1
+	cultivation += 10
+
+	message_text = "击败妖兽！修为 +10"
+	message_timer = 1.0
+
+	if cultivation >= next_level_xp:
+		begin_upgrade()
+		return
+
+	spawn_enemy()
+
+
+func spawn_enemy() -> void:
+	var margin := 60.0
+	var side := randi_range(0, 3)
+
+	match side:
+		0:
+			enemy_pos = Vector2(randf_range(margin, screen_size.x - margin), margin)
+		1:
+			enemy_pos = Vector2(randf_range(margin, screen_size.x - margin), screen_size.y - margin)
+		2:
+			enemy_pos = Vector2(margin, randf_range(margin, screen_size.y - margin))
+		3:
+			enemy_pos = Vector2(screen_size.x - margin, randf_range(margin, screen_size.y - margin))
+
+	enemy_hp = enemy_max_hp
+
+
+# ==========================================
+# 升级与随机功法三选一
+# ==========================================
+
+func begin_upgrade() -> void:
+	upgrade_pending = true
+
+	skill_choices = [
+		{
+			"name": "剑气诀",
+			"description": "剑气伤害永久 +10"
+		},
+		{
+			"name": "护体灵气",
+			"description": "每次受到伤害减少 5"
+		},
+		{
+			"name": "疾风步",
+			"description": "移动速度永久 +35"
+		}
+	]
+
+	skill_choices.shuffle()
+
+
+func choose_skill(index: int) -> void:
+	if not upgrade_pending:
+		return
+
+	if index < 0 or index >= skill_choices.size():
+		return
+
+	var chosen: Dictionary = skill_choices[index]
+	var skill_name: String = chosen["name"]
+
+	match skill_name:
+		"剑气诀":
+			sword_bonus += 10
+		"护体灵气":
+			armor_reduction += 5
+		"疾风步":
+			speed_bonus += 35.0
+
+	learned_skills.append(skill_name)
+
+	level += 1
+	next_level_xp = level * 30
+	upgrade_pending = false
+
+	message_text = "习得功法：" + skill_name
+	message_timer = 1.5
+
+	spawn_enemy()
+
+
+# ==========================================
+# 键盘操作：升级选择、重开游戏
+# ==========================================
+
+func _unhandled_input(event: InputEvent) -> void:
+	if event is InputEventKey and event.pressed and not event.echo:
+		if is_game_over:
+			if event.keycode == KEY_R:
+				restart_game()
+			return
+
+		if upgrade_pending:
+			match event.keycode:
+				KEY_1:
+					choose_skill(0)
+				KEY_2:
+					choose_skill(1)
+				KEY_3:
+					choose_skill(2)
+
+
+func restart_game() -> void:
+	player_pos = screen_size / 2.0
+	player_hp = player_max_hp
+	damage_cooldown = 0.0
+	is_game_over = false
+
+	enemy_hp = enemy_max_hp
+	kill_count = 0
+	cultivation = 0
+	level = 1
+	next_level_xp = 30
+
+	sword_bonus = 0
+	armor_reduction = 0
+	speed_bonus = 0.0
+
+	upgrade_pending = false
+	skill_choices.clear()
+	learned_skills.clear()
+
+	projectile_positions.clear()
+	projectile_directions.clear()
+	projectile_damages.clear()
+	projectile_lifetimes.clear()
+	projectile_is_critical.clear()
+	enemy_hit_flash = 0.0
+
+	attack_cooldown = 0.0
+	message_timer = 0.0
+	message_text = ""
+
+	spawn_enemy()
+
+
+# ==========================================
+# 绘制游戏画面
+# ==========================================
+
+func _draw() -> void:
+	# 秘境背景
+	draw_rect(Rect2(Vector2.ZERO, screen_size), Color("#173d32"))
+
+	# 简单像素风地面纹理
+	for x in range(20, int(screen_size.x), 48):
+		for y in range(20, int(screen_size.y), 48):
+			draw_rect(
+				Rect2(Vector2(x,y), Vector2(2, 2)),
+				Color("#285344")
+			)
+
+	# 妖兽
+	# 妖兽：命中时短暂闪白
+	var enemy_color := Color("#bd3e85")
+
+	if enemy_hit_flash > 0.0:
+		enemy_color = Color.WHITE
+
+	draw_rect(
+		Rect2(
+			enemy_pos - Vector2.ONE * enemy_size / 2.0,
+			Vector2.ONE * enemy_size
+		),
+		enemy_color
+	)
+
+	# 妖兽血条
+	var bar_width := 54.0
+	var bar_pos := enemy_pos + Vector2(-bar_width / 2.0, -enemy_size / 2.0 - 14.0)
+	draw_rect(Rect2(bar_pos, Vector2(bar_width, 6)), Color("#421c31"))
+
+	var hp_ratio := float(enemy_hp) / float(enemy_max_hp)
+	draw_rect(
+		Rect2(bar_pos, Vector2(bar_width * hp_ratio, 6)),
+		Color("#f05276")
+	)
+
+	# 玩家
+	var player_color := Color("#45e5df")
+
+	if damage_cooldown > 0.0:
+		player_color = Color("#ffffff")
+
+	draw_rect(
+		Rect2(
+			player_pos - Vector2.ONE * player_size / 2.0,
+			Vector2.ONE * player_size
+		),
+		player_color
+	)
+
+	# 剑气弹幕
+	for i in range(projectile_positions.size()):
+		var p: Vector2 = projectile_positions[i]
+		var d: Vector2 = projectile_directions[i]
+		var tail := p - d * 18.0
+		var tip := p + d * 7.0
+
+		draw_line(tail, tip, Color("#42f5ff"), 5.0, true)
+		draw_circle(p, projectile_size, Color("#d5ffff"))
+
+	# 玩家生命条
+	draw_string(
+		ThemeDB.fallback_font,
+		Vector2(20, 30),
+		"生命：" + str(player_hp) + " / " + str(player_max_hp),
+		HORIZONTAL_ALIGNMENT_LEFT,
+		-1,
+		20,
+		Color.WHITE
+	)
+
+	draw_rect(Rect2(Vector2(20, 40), Vector2(180, 10)), Color("#421c31"))
+	draw_rect(
+		Rect2(Vector2(20, 40), Vector2(180.0 * float(player_hp) / float(player_max_hp), 10)),
+		Color("#48df91")
+	)
+
+	# 修为与等级
+	draw_string(
+		ThemeDB.fallback_font,
+		Vector2(20, 78),
+		"等级：" + str(level) + "   修为：" + str(cultivation) + " / " + str(next_level_xp),
+		HORIZONTAL_ALIGNMENT_LEFT,
+		-1,
+		18,
+		Color.WHITE
+	)
+
+	draw_string(
+		ThemeDB.fallback_font,
+		Vector2(20, 105),
+		"击败妖兽：" + str(kill_count),
+		HORIZONTAL_ALIGNMENT_LEFT,
+		-1,
+		18,
+		Color.WHITE
+	)
+
+	# 当前功法加成
+	draw_string(
+		ThemeDB.fallback_font,
+		Vector2(20, 132),
+		"剑气 +" + str(sword_bonus)
+		+ "  减伤 " + str(armor_reduction)
+		+ "  移速 +" + str(int(speed_bonus)),
+		HORIZONTAL_ALIGNMENT_LEFT,
+		-1,
+		16,
+		Color("#b9f5d7")
+	)
+
+	draw_string(
+		ThemeDB.fallback_font,
+		Vector2(20, screen_size.y - 18),
+		"WASD / 方向键移动",
+		HORIZONTAL_ALIGNMENT_LEFT,
+		-1,
+		16,
+		Color("#d4e9dc")
+	)
+
+	# 临时提示
+	if message_timer > 0.0:
+		draw_string(
+			ThemeDB.fallback_font,
+			Vector2(screen_size.x / 2.0 - 100.0, 70),
+			message_text,
+			HORIZONTAL_ALIGNMENT_CENTER,
+			200,
+			20,
+			Color("#fff1a8")
+		)
+
+	# 升级界面
+	if upgrade_pending:
+		draw_rect(
+			Rect2(Vector2.ZERO, screen_size),
+			Color(0, 0, 0, 0.72)
+		)
+
+		draw_string(
+			ThemeDB.fallback_font,
+			Vector2(screen_size.x / 2.0 - 180.0, screen_size.y / 2.0 - 100.0),
+			"突破成功！选择一门功法",
+			HORIZONTAL_ALIGNMENT_CENTER,
+			360,
+			28,
+			Color("#ffe9a6")
+		)
+
+		for i in range(skill_choices.size()):
+			var card_y := screen_size.y / 2.0 - 45.0 + float(i) * 66.0
+			var card_rect := Rect2(
+				Vector2(screen_size.x / 2.0 - 200.0, card_y),
+				Vector2(400, 54)
+			)
+
+			draw_rect(card_rect, Color("#294d48"))
+			draw_rect(card_rect, Color("#69d9c5"), false, 2.0)
+
+			var skill: Dictionary = skill_choices[i]
+			var line_text := str(i + 1) + ". " + str(skill["name"]) + " — " + str(skill["description"])
+
+			draw_string(
+				ThemeDB.fallback_font,
+				Vector2(card_rect.position.x + 14.0, card_rect.position.y + 33.0),
+				line_text,
+				HORIZONTAL_ALIGNMENT_LEFT,
+				370,
+				17,
+				Color.WHITE
+			)
+
+		draw_string(
+			ThemeDB.fallback_font,
+			Vector2(screen_size.x / 2.0 - 140.0, screen_size.y / 2.0 + 185.0),
+			"按键盘 1、2 或 3 选择",
+			HORIZONTAL_ALIGNMENT_CENTER,
+			280,
+			18,
+			Color("#ffe9a6")
+		)
+
+	# 死亡界面
+	if is_game_over:
+		draw_rect(
+			Rect2(Vector2.ZERO, screen_size),
+			Color(0, 0, 0, 0.78)
+		)
+
+		draw_string(
+			ThemeDB.fallback_font,
+			Vector2(screen_size.x / 2.0 - 140.0, screen_size.y / 2.0 - 35.0),
+			"修仙失败！",
+			HORIZONTAL_ALIGNMENT_CENTER,
+			280,
+			36,
+			Color("#ff6b83")
+		)
+
+		draw_string(
+			ThemeDB.fallback_font,
+			Vector2(screen_size.x / 2.0 - 180.0, screen_size.y / 2.0 + 15.0),
+			"击败妖兽：" + str(kill_count) + "   最终等级：" + str(level),
+			HORIZONTAL_ALIGNMENT_CENTER,
+			360,
+			20,
+			Color.WHITE
+		)
+
+		draw_string(
+			ThemeDB.fallback_font,
+			Vector2(screen_size.x / 2.0 - 140.0, screen_size.y / 2.0 + 60.0),
+			"按 R 键重新开始",
+			HORIZONTAL_ALIGNMENT_CENTER,
+			280,
+			22,
+			Color("#ffe9a6")
+		)
