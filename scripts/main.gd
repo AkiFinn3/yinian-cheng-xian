@@ -356,6 +356,12 @@ func kill_enemy() -> void:
 	message_text = "击败" + enemy_name + "！修为 +" + str(reward)
 	message_timer = 1.0
 
+	# 已封顶：修为停在阈值，不再触发升级
+	if is_max_realm():
+		cultivation = mini(cultivation, get_next_level_xp())
+		spawn_enemy()
+		return
+
 	if cultivation >= get_next_level_xp():
 		cultivation -= get_next_level_xp()
 		begin_upgrade()
@@ -440,6 +446,11 @@ func get_current_skill_pool() -> Array:
 	return REALMS[realm_index]["skills"]
 
 
+# 是否已到本阶段封顶（炼虚合道·圆满）
+func is_max_realm() -> bool:
+	return realm_index >= REALMS.size() - 1 and stage_index >= STAGE_NAMES.size() - 1
+
+
 func begin_upgrade() -> void:
 	upgrade_pending = true
 
@@ -500,6 +511,12 @@ func choose_skill(index: int) -> void:
 
 	message_text = "习得功法：" + skill_name
 	message_timer = 1.5
+
+	# 修为溢出：剩余修为仍够升下一阶时，连续弹升级
+	if not is_max_realm() and cultivation >= get_next_level_xp():
+		cultivation -= get_next_level_xp()
+		begin_upgrade()
+		return
 
 	spawn_enemy()
 
