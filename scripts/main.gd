@@ -152,6 +152,13 @@ var menu_selection: int = 0            # 主菜单当前高亮项
 var pause_selection: int = 0           # 暂停菜单当前高亮项
 
 # 障碍物（v0.16.0）：按世界格哈希生成，走到哪生成到哪
+# 贴图（v0.23.0：像素水墨 Q 版素材）
+var tex_player: Texture2D = null
+var tex_enemies: Dictionary = {}      # type -> Texture2D
+var tex_obstacles: Dictionary = {}    # type -> Texture2D
+var tex_sword: Texture2D = null
+var tex_enemy_shot: Texture2D = null
+
 # 敌方弹幕（v0.21.0：邪修远程攻击）
 var enemy_shots: Array = []
 
@@ -272,6 +279,7 @@ func _ready() -> void:
 	in_main_menu = true
 	is_paused = false
 	init_audio()
+	load_textures()
 	load_settings()
 	queue_redraw()
 
@@ -2439,6 +2447,35 @@ func _unhandled_input(event: InputEvent) -> void:
 const SFX_POOL_SIZE := 3
 
 
+# ==========================================
+# 贴图加载（v0.23.0）
+# 用 ResourceLoader.exists 检查，缺图自动回退方块绘制
+# ==========================================
+
+func load_textures() -> void:
+	# 玩家
+	if ResourceLoader.exists("res://assets/sprites/player/player_idle.png"):
+		tex_player = load("res://assets/sprites/player/player_idle.png")
+
+	# 妖兽
+	for key in ENEMY_TYPES.keys():
+		var path := "res://assets/sprites/enemies/" + str(key) + ".png"
+		if ResourceLoader.exists(path):
+			tex_enemies[str(key)] = load(path)
+
+	# 障碍物
+	for key in OBSTACLES.keys():
+		var path := "res://assets/sprites/obstacles/" + str(key) + ".png"
+		if ResourceLoader.exists(path):
+			tex_obstacles[str(key)] = load(path)
+
+	# 弹幕
+	if ResourceLoader.exists("res://assets/sprites/projectiles/sword.png"):
+		tex_sword = load("res://assets/sprites/projectiles/sword.png")
+	if ResourceLoader.exists("res://assets/sprites/projectiles/enemy_shot.png"):
+		tex_enemy_shot = load("res://assets/sprites/projectiles/enemy_shot.png")
+
+
 func init_audio() -> void:
 	if audio_ready:
 		return
@@ -3596,31 +3633,48 @@ func _draw() -> void:
 		if float(o["flash"]) > 0.0:
 			ocol = Color.WHITE
 
-		# 岩石画方块，古木画三角树冠，灵草画小菱形
-		match str(o["type"]):
-			"rock":
-				draw_rect(Rect2(op - Vector2.ONE * orad, Vector2.ONE * orad * 2.0), ocol)
-				draw_rect(Rect2(op - Vector2.ONE * orad, Vector2.ONE * orad * 2.0), oedge, false, 2.0)
-			"tree":
-				draw_rect(Rect2(op - Vector2(orad * 0.18, orad * 0.9), Vector2(orad * 0.36, orad * 1.6)), ocol)
-				draw_colored_polygon(
-					PackedVector2Array([
-						op + Vector2(0.0, -orad * 1.5),
-						op + Vector2(-orad, orad * 0.25),
-						op + Vector2(orad, orad * 0.25),
-					]),
-					oedge
-				)
-			"herb":
-				draw_colored_polygon(
-					PackedVector2Array([
-						op + Vector2(0.0, -orad),
-						op + Vector2(orad, 0.0),
-						op + Vector2(0.0, orad),
-						op + Vector2(-orad, 0.0),
-					]),
-					oedge
-				)
+		# 贴图优先（v0.23.0）
+		var otex: Texture2D = tex_obstacles.get(str(o["type"]), null) as Texture2D
+		if otex != null:
+			var omod := Color.WHITE
+			if float(o["flash"]) > 0.0:
+				omod = Color(2.0, 2.0, 2.0, 1.0)
+			# 古木是竖长方形，按原始比例显示
+			var tw := orad * 2.0
+			var th := tw
+			if str(o["type"]) == "tree":
+				th = tw * 1.5
+			draw_texture_rect(
+				otex,
+				Rect2(Vector2(op.x - tw / 2.0, op.y - th / 2.0), Vector2(tw, th)),
+				false, omod
+			)
+		else:
+			# 岩石画方块，古木画三角树冠，灵草画小菱形
+			match str(o["type"]):
+				"rock":
+					draw_rect(Rect2(op - Vector2.ONE * orad, Vector2.ONE * orad * 2.0), ocol)
+					draw_rect(Rect2(op - Vector2.ONE * orad, Vector2.ONE * orad * 2.0), oedge, false, 2.0)
+				"tree":
+					draw_rect(Rect2(op - Vector2(orad * 0.18, orad * 0.9), Vector2(orad * 0.36, orad * 1.6)), ocol)
+					draw_colored_polygon(
+						PackedVector2Array([
+							op + Vector2(0.0, -orad * 1.5),
+							op + Vector2(-orad, orad * 0.25),
+							op + Vector2(orad, orad * 0.25),
+						]),
+						oedge
+					)
+				"herb":
+					draw_colored_polygon(
+						PackedVector2Array([
+							op + Vector2(0.0, -orad),
+							op + Vector2(orad, 0.0),
+							op + Vector2(0.0, orad),
+							op + Vector2(-orad, 0.0),
+						]),
+						oedge
+					)
 
 		# 可破坏的显示剩余耐久
 		if bool(od["breakable"]) and int(o["max_hp"]) > 1 and int(o["hp"]) < int(o["max_hp"]):
@@ -3635,8 +3689,15 @@ func _draw() -> void:
 	# 敌方弹幕（v0.21.0）
 	for shot in enemy_shots:
 		var spos: Vector2 = w2s(shot["pos"])
-		draw_circle(spos, 7.0, Color("#b45cff"))
-		draw_circle(spos, 4.0, Color("#e0b0ff"))
+		if tex_enemy_shot != null:
+			draw_texture_rect(
+				tex_enemy_shot,
+				Rect2(spos - Vector2.ONE * 9.0, Vector2.ONE * 18.0),
+				false, Color.WHITE
+			)
+		else:
+			draw_circle(spos, 7.0, Color("#b45cff"))
+			draw_circle(spos, 4.0, Color("#e0b0ff"))
 
 	# 妖兽（遍历数组绘制每一只）
 	for e in enemies:
@@ -3660,10 +3721,25 @@ func _draw() -> void:
 			draw_size = size * pulse
 			enemy_color = Color("#ff4d4d") if int(t * 20.0) % 2 == 0 else Color.WHITE
 
-		draw_rect(
-			Rect2(pos - Vector2.ONE * draw_size / 2.0, Vector2.ONE * draw_size),
-			enemy_color
-		)
+		# 贴图优先（v0.23.0）
+		var etex: Texture2D = tex_enemies.get(str(e["type"]), null) as Texture2D
+		if etex != null:
+			var emod := Color.WHITE
+			if float(e["hit_flash"]) > 0.0:
+				emod = Color(2.0, 2.0, 2.0, 1.0)     # 提亮模拟闪白
+			elif bool(e.get("exploding", false)):
+				var tt := float(e.get("explode_timer", 0.35))
+				emod = Color(1.6, 0.6, 0.6, 1.0) if int(tt * 20.0) % 2 == 0 else Color(1.8, 1.8, 1.8, 1.0)
+			draw_texture_rect(
+				etex,
+				Rect2(pos - Vector2.ONE * draw_size / 2.0, Vector2.ONE * draw_size),
+				false, emod
+			)
+		else:
+			draw_rect(
+				Rect2(pos - Vector2.ONE * draw_size / 2.0, Vector2.ONE * draw_size),
+				enemy_color
+			)
 
 		# 精英词条描边（v0.21.0）
 		var affix_list: Array = e.get("affixes", [])
@@ -3770,17 +3846,28 @@ func _draw() -> void:
 			Color(1, 1, 1, 0.8)
 		)
 
-	# 玩家
-	var player_color := Color("#45e5df")
-
-	if damage_cooldown > 0.0:
-		player_color = Color("#ffffff")
-
+	# 玩家（v0.23.0：优先用贴图，缺图回退方块）
 	var psp := w2s(player_pos)
-	draw_rect(
-		Rect2(psp - Vector2.ONE * player_size / 2.0, Vector2.ONE * player_size),
-		player_color
-	)
+
+	if tex_player != null:
+		# 贴图按 player_size 缩放显示，中心对齐
+		var half := player_size / 2.0
+		var mod := Color.WHITE
+		if damage_cooldown > 0.0:
+			mod = Color(1.0, 1.0, 1.0, 0.5)
+		draw_texture_rect(
+			tex_player,
+			Rect2(psp - Vector2.ONE * half, Vector2.ONE * player_size),
+			false, mod
+		)
+	else:
+		var player_color := Color("#45e5df")
+		if damage_cooldown > 0.0:
+			player_color = Color("#ffffff")
+		draw_rect(
+			Rect2(psp - Vector2.ONE * player_size / 2.0, Vector2.ONE * player_size),
+			player_color
+		)
 
 	# 剑气弹幕
 	for i in range(projectile_positions.size()):
@@ -3796,8 +3883,20 @@ func _draw() -> void:
 		if ELEMENTS.has(elem):
 			pcolor = Color(str(ELEMENTS[elem]["color"]))
 
-		draw_line(tail, tip, pcolor, 5.0, true)
-		draw_circle(p, projectile_size, Color("#d5ffff"))
+		if tex_sword != null:
+			# 贴图按方向旋转
+			var ang := d.angle()
+			var sz := 26.0
+			draw_set_transform(p, ang, Vector2.ONE)
+			draw_texture_rect(
+				tex_sword,
+				Rect2(Vector2(-sz / 2.0, -sz / 2.0), Vector2(sz, sz)),
+				false, Color.WHITE
+			)
+			draw_set_transform(Vector2.ZERO, 0.0, Vector2.ONE)
+		else:
+			draw_line(tail, tip, pcolor, 5.0, true)
+			draw_circle(p, projectile_size, Color("#d5ffff"))
 
 	# 玩家生命条
 	draw_string(
