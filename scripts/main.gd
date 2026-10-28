@@ -1970,6 +1970,137 @@ func restart_game() -> void:
 # 绘制游戏画面
 # ==========================================
 
+# ==========================================
+# 底部 HUD（网游式）：修为进度条 + 技能图标栏
+# ==========================================
+const HUD_BAR_H := 26.0       # 修为条高度
+const HUD_ICON_SIZE := 44.0   # 技能图标边长
+const HUD_ICON_GAP := 8.0
+
+# 计算图标栏起点（居中）
+func get_hud_icon_start(count: int) -> float:
+	var total_w := float(count) * HUD_ICON_SIZE + float(count - 1) * HUD_ICON_GAP
+	return (screen_size.x - total_w) / 2.0
+
+
+# 绘制单个技能图标
+func draw_hud_icon(pos: Vector2, label: String, sub: String, color: Color, ready: bool, active: bool) -> void:
+	var r := Rect2(pos, Vector2.ONE * HUD_ICON_SIZE)
+	var bg := Color("#2a3d38") if ready else Color("#1a2420")
+	draw_rect(r, bg)
+	draw_rect(r, color if ready else Color("#4a5a55"), false, 2.0 if active else 1.5)
+
+	# 图标内文字（取标签首字）
+	draw_string(
+		ThemeDB.fallback_font,
+		pos + Vector2(0, 28),
+		label,
+		HORIZONTAL_ALIGNMENT_CENTER,
+		HUD_ICON_SIZE,
+		20,
+		color if ready else Color("#6a7a75")
+	)
+
+	# 下方小字
+	draw_string(
+		ThemeDB.fallback_font,
+		pos + Vector2(0, HUD_ICON_SIZE + 13),
+		sub,
+		HORIZONTAL_ALIGNMENT_CENTER,
+		HUD_ICON_SIZE,
+		11,
+		Color("#9ab5ad")
+	)
+
+
+func draw_bottom_hud() -> void:
+	if is_game_over:
+		return
+
+	var bar_y := screen_size.y - HUD_BAR_H
+
+	# --- 修为进度条（最底部，通栏）---
+	draw_rect(Rect2(Vector2(0, bar_y), Vector2(screen_size.x, HUD_BAR_H)), Color("#101a17"))
+
+	var need := get_next_level_xp()
+	var ratio := 1.0 if is_max_realm() else clampf(float(cultivation) / float(need), 0.0, 1.0)
+
+	# 进度条本体（渐变色条）
+	draw_rect(
+		Rect2(Vector2(0, bar_y), Vector2(screen_size.x * ratio, HUD_BAR_H)),
+		Color("#2f8f6f")
+	)
+	draw_rect(
+		Rect2(Vector2(0, bar_y), Vector2(screen_size.x * ratio, HUD_BAR_H * 0.45)),
+		Color("#3fbf92")
+	)
+
+	# 进度条文字
+	var bar_text := "修为 %d / %d" % [cultivation, need]
+	if is_max_realm():
+		bar_text = "已至天仙·圆满"
+	draw_string(
+		ThemeDB.fallback_font,
+		Vector2(0, bar_y + 18),
+		bar_text,
+		HORIZONTAL_ALIGNMENT_CENTER,
+		screen_size.x,
+		14,
+		Color.WHITE
+	)
+
+	# --- 技能图标栏（进度条上方，居中）---
+	var icons: Array[Dictionary] = []
+
+	# 飞剑
+	if unlocked_sword != "":
+		var ready := sword_cooldown <= 0.0
+		icons.append({
+			"label": "剑",
+			"sub": "空格" if ready else "%.1fs" % sword_cooldown,
+			"color": Color("#ffd76e"),
+			"ready": ready,
+			"active": false,
+		})
+
+	# 符箓（显示前 5 个）
+	for i in range(mini(talisman_bag.size(), 5)):
+		var tname: String = talisman_bag[i]
+		icons.append({
+			"label": str(tname).substr(0, 1),
+			"sub": "Q" if i == selected_talisman else "E切",
+			"color": Color("#a8d8ff"),
+			"ready": true,
+			"active": i == selected_talisman,
+		})
+
+	# 法器（显示为图标）
+	for a in artifacts:
+		icons.append({
+			"label": str(a).substr(0, 1),
+			"sub": str(a).substr(0, 3),
+			"color": Color("#d4a05a"),
+			"ready": true,
+			"active": false,
+		})
+
+	if icons.size() > 0:
+		var start_x := get_hud_icon_start(icons.size())
+		var icon_y := bar_y - HUD_ICON_SIZE - 22.0
+
+		for i in range(icons.size()):
+			var ic: Dictionary = icons[i]
+			var px := start_x + float(i) * (HUD_ICON_SIZE + HUD_ICON_GAP)
+			draw_hud_icon(
+				Vector2(px, icon_y),
+				str(ic["label"]),
+				str(ic["sub"]),
+				ic["color"],
+				bool(ic["ready"]),
+				bool(ic["active"])
+			)
+
+
 func _draw() -> void:
 	# 秘境背景（铺满视口）
 	draw_rect(Rect2(Vector2.ZERO, screen_size), Color("#173d32"))
@@ -2116,49 +2247,6 @@ func _draw() -> void:
 			-1,
 			16,
 			Color("#7fd8ff")
-		)
-
-	# 符箓与飞剑栏
-	if talisman_bag.size() > 0:
-		var t_text := "符箓 [Q]："
-		for i in range(talisman_bag.size()):
-			var mark := "▶" if i == selected_talisman else " "
-			t_text += mark + str(talisman_bag[i]) + " "
-		draw_string(
-			ThemeDB.fallback_font,
-			Vector2(20, screen_size.y - 100.0),
-			t_text,
-			HORIZONTAL_ALIGNMENT_LEFT,
-			-1,
-			15,
-			Color("#a8d8ff")
-		)
-
-	if unlocked_sword != "":
-		var cd_text := "就绪" if sword_cooldown <= 0.0 else "%.1f秒" % sword_cooldown
-		draw_string(
-			ThemeDB.fallback_font,
-			Vector2(20, screen_size.y - 126.0),
-			"飞剑 [空格]：" + unlocked_sword + " (" + cd_text + ")",
-			HORIZONTAL_ALIGNMENT_LEFT,
-			-1,
-			15,
-			Color("#ffd76e") if sword_cooldown <= 0.0 else Color("#8a7a4a")
-		)
-
-	# 法器栏
-	if artifacts.size() > 0:
-		var art_text := "法器："
-		for a in artifacts:
-			art_text += "[" + str(a) + "] "
-		draw_string(
-			ThemeDB.fallback_font,
-			Vector2(20, screen_size.y - 70.0),
-			art_text,
-			HORIZONTAL_ALIGNMENT_LEFT,
-			-1,
-			15,
-			Color("#ffd76e")
 		)
 
 	draw_string(
@@ -2517,6 +2605,11 @@ func _draw() -> void:
 			18,
 			Color("#ffd76e")
 		)
+
+	# ==========================================
+	# 底部 HUD（网游式）
+	# ==========================================
+	draw_bottom_hud()
 
 	# 结算界面（胜利 / 失败）
 	if is_game_over:
