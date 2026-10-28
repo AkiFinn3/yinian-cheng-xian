@@ -2241,7 +2241,7 @@ func _draw() -> void:
 	if get_pending_xp() > 0:
 		draw_string(
 			ThemeDB.fallback_font,
-			Vector2(20, screen_size.y - 44.0),
+			Vector2(20, screen_size.y - HUD_BAR_H - 96.0),
 			"待拾取修为：" + str(get_pending_xp()),
 			HORIZONTAL_ALIGNMENT_LEFT,
 			-1,
@@ -2310,12 +2310,12 @@ func _draw() -> void:
 
 	draw_string(
 		ThemeDB.fallback_font,
-		Vector2(20, screen_size.y - 18),
-		"WASD / 方向键移动",
+		Vector2(20, screen_size.y - HUD_BAR_H - 118.0),
+		"WASD 移动 · Q 符箓 · E 切换 · 空格 飞剑",
 		HORIZONTAL_ALIGNMENT_LEFT,
 		-1,
-		16,
-		Color("#d4e9dc")
+		14,
+		Color("#8aa89e")
 	)
 
 	# 临时提示
