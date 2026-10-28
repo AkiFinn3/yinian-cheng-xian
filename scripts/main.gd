@@ -125,6 +125,23 @@ var is_game_over: bool = false
 
 # 妖兽数组（阶段 9：同屏多只）
 # 每只妖兽是一个 Dictionary：type/pos/speed/size/max_hp/hp/hit_flash
+# 音效系统（v0.20.0）
+const AudioSynth := preload("res://scripts/audio.gd")
+const SFX := Data.SFX
+const SFX_DEFAULT_VOLUME := Data.SFX_DEFAULT_VOLUME
+const BGM_DEFAULT_VOLUME := Data.BGM_DEFAULT_VOLUME
+const SETTINGS_PATH := "user://settings.json"
+
+var sfx_players: Dictionary = {}      # 名称 → AudioStreamPlayer 池
+var sfx_cache: Dictionary = {}        # 名称 → AudioStreamWAV
+var sfx_volume: float = 1.0           # 0.0 ~ 1.0
+var audio_ready: bool = false
+
+# 设置界面（v0.20.0）
+var in_settings: bool = false
+var settings_from_menu: bool = true     # 从主菜单进入还是从暂停进入
+var settings_selection: int = 0
+
 # 主菜单与暂停（v0.17.0）
 var in_main_menu: bool = true          # 启动先进主菜单
 var is_paused: bool = false            # 游戏中按 ESC 暂停
@@ -248,6 +265,8 @@ func _ready() -> void:
 	# 先进主菜单，玩家点「开始」才真正开局（v0.17.0）
 	in_main_menu = true
 	is_paused = false
+	init_audio()
+	load_settings()
 	queue_redraw()
 
 
@@ -255,6 +274,11 @@ func _process(delta: float) -> void:
 	screen_size = get_viewport_rect().size
 	# UI 自适应：窗口小于 1100 宽时按比例缩小
 	ui_scale = clampf(screen_size.x / 1280.0, 0.65, 1.0)
+
+	# 设置界面：不跑游戏逻辑
+	if in_settings:
+		queue_redraw()
+		return
 
 	# 槽位选择界面：不跑游戏逻辑
 	if not slot_select_mode.is_empty():
@@ -424,10 +448,12 @@ func update_enemies(delta: float) -> void:
 
 			message_text = "受到伤害 -" + str(actual_damage)
 			message_timer = 0.5
+			play_sfx("hurt")
 
 			if player_hp <= 0:
 				player_hp = 0
 				is_game_over = true
+				play_sfx("lose")
 
 
 # ==========================================
@@ -458,6 +484,7 @@ func update_auto_attack() -> void:
 
 	fire_sword_energy(direction.normalized())
 	attack_cooldown = attack_interval
+	play_sfx("shoot")
 
 
 func fire_sword_energy(direction: Vector2) -> void:
@@ -566,6 +593,7 @@ func apply_hit(index: int, damage: int, is_critical: bool, element: String) -> v
 	var e: Dictionary = enemies[index]
 	e["hp"] = int(e["hp"]) - damage
 	e["hit_flash"] = 0.12
+	play_sfx("crit" if is_critical else "hit")
 
 	# 元素效果
 	match element:
@@ -653,6 +681,7 @@ func chain_thunder(origin_index: int, damage: int) -> void:
 
 # 在指定位置掉落修为晶石（同位置附近自动合并）
 func spawn_orb(pos: Vector2, value: int) -> void:
+	# 注意：这里只是生成，音效在拾取时播
 	if value <= 0:
 		return
 
@@ -697,6 +726,7 @@ func update_orbs(delta: float) -> void:
 			var gained := int(round(float(o["value"]) * xp_mul))
 			cultivation += gained
 			orbs.remove_at(i)
+			play_sfx("orb")
 			check_level_up()
 			continue
 
@@ -910,8 +940,10 @@ func kill_enemy(index: int) -> void:
 		boss_active = false
 		game_won = true
 		is_game_over = true
+		play_sfx("win")
 		return
 
+	play_sfx("kill")
 	message_text = ("精英·" if is_elite else "") + "击败" + enemy_name + "！修为掉落 " + str(reward)
 	message_timer = 1.0
 
@@ -1034,6 +1066,7 @@ func estimate_player_dps() -> float:
 
 # 飞升试炼：达到天仙后自动触发（原由波次触发）
 func spawn_boss() -> void:
+	play_sfx("boss")
 	var data: Dictionary = ENEMY_TYPES["boss"]
 	enemies.clear()
 	# 动态血量：按玩家 DPS 反推，目标约 25 秒击杀
@@ -1167,6 +1200,7 @@ func is_immortal() -> bool:
 
 func begin_upgrade() -> void:
 	upgrade_pending = true
+	play_sfx("levelup")
 
 	var pool: Array = get_current_skill_pool()
 	var picked: Array = pool.duplicate()
@@ -1233,6 +1267,7 @@ func roll_formation_drop() -> void:
 
 # 放置阵法（脚下）
 func place_formation() -> void:
+	play_sfx("formation")
 	if formation_bag.size() == 0:
 		return
 	if not active_formation.is_empty():
@@ -1330,6 +1365,7 @@ func cycle_talisman() -> void:
 
 # 释放符箓
 func use_talisman() -> void:
+	play_sfx("talisman")
 	if talisman_bag.size() == 0:
 		return
 	if selected_talisman >= talisman_bag.size():
@@ -1422,6 +1458,7 @@ func update_sword_unlock() -> void:
 
 # 释放飞剑
 func use_flying_sword() -> void:
+	play_sfx("sword")
 	if unlocked_sword == "" or sword_cooldown > 0.0:
 		return
 
@@ -1690,6 +1727,7 @@ func choose_tribulation_reward(index: int) -> void:
 
 # 推进境界（凡人 → 仙道 → 神仙 → 天仙）
 func advance_realm() -> void:
+	play_sfx("realm")
 	# 仙阶：神仙 → 天仙 → 封顶
 	if immortal_stage >= 1:
 		immortal_stage = mini(immortal_stage + 1, 3)
@@ -1882,6 +1920,32 @@ func get_hovered_skill_index() -> int:
 
 
 func _input(event: InputEvent) -> void:
+	# 设置界面鼠标操作（v0.20.0）
+	if in_settings:
+		if event is InputEventMouseButton and event.pressed and event.button_index == MOUSE_BUTTON_LEFT:
+			var si := get_settings_index_at(event.position)
+			if si == 0:
+				# 点滑杆直接定位音量
+				var bar := get_volume_slider_rect(0)
+				if event.position.x >= bar.position.x - 20.0 and event.position.x <= bar.position.x + bar.size.x + 20.0:
+					set_sfx_volume(slider_value_at(0, event.position.x))
+					play_sfx("click")
+				else:
+					select_settings(0)
+				get_viewport().set_input_as_handled()
+			elif si >= 0:
+				select_settings(si)
+				get_viewport().set_input_as_handled()
+		elif event is InputEventMouseMotion:
+			# 按住左键拖动滑杆
+			if event.button_mask & MOUSE_BUTTON_MASK_LEFT:
+				var bar2 := get_volume_slider_rect(0)
+				if event.position.x >= bar2.position.x - 30.0 and event.position.x <= bar2.position.x + bar2.size.x + 30.0 \
+						and event.position.y >= bar2.position.y - 24.0 and event.position.y <= bar2.position.y + bar2.size.y + 24.0:
+					set_sfx_volume(slider_value_at(0, event.position.x))
+			queue_redraw()
+		return
+
 	# 槽位选择鼠标操作（v0.19.0）
 	if not slot_select_mode.is_empty():
 		if event is InputEventMouseButton and event.pressed and event.button_index == MOUSE_BUTTON_LEFT:
@@ -1945,6 +2009,28 @@ func _input(event: InputEvent) -> void:
 
 
 func _unhandled_input(event: InputEvent) -> void:
+	# 设置界面（v0.20.0）最优先
+	if in_settings:
+		if event is InputEventKey and event.pressed and not event.echo:
+			match event.keycode:
+				KEY_UP, KEY_W:
+					settings_selection = (settings_selection + 2) % 3
+				KEY_DOWN, KEY_S:
+					settings_selection = (settings_selection + 1) % 3
+				KEY_LEFT, KEY_A:
+					set_sfx_volume(sfx_volume - 0.1)
+					play_sfx("click")
+				KEY_RIGHT, KEY_D:
+					set_sfx_volume(sfx_volume + 0.1)
+					play_sfx("click")
+				KEY_ENTER, KEY_KP_ENTER, KEY_SPACE:
+					select_settings(settings_selection)
+				KEY_ESCAPE:
+					in_settings = false
+					if not settings_from_menu:
+						is_paused = true
+		return
+
 	# 槽位选择界面（v0.19.0）优先
 	if not slot_select_mode.is_empty():
 		if event is InputEventKey and event.pressed and not event.echo:
@@ -1973,9 +2059,9 @@ func _unhandled_input(event: InputEvent) -> void:
 		if event is InputEventKey and event.pressed and not event.echo:
 			match event.keycode:
 				KEY_UP, KEY_W:
-					menu_selection = (menu_selection + 2) % 3
+					menu_selection = (menu_selection + 3) % 4
 				KEY_DOWN, KEY_S:
-					menu_selection = (menu_selection + 1) % 3
+					menu_selection = (menu_selection + 1) % 4
 				KEY_ENTER, KEY_KP_ENTER, KEY_SPACE:
 					select_main_menu(menu_selection)
 				KEY_ESCAPE:
@@ -1987,9 +2073,9 @@ func _unhandled_input(event: InputEvent) -> void:
 		if event is InputEventKey and event.pressed and not event.echo:
 			match event.keycode:
 				KEY_UP, KEY_W:
-					pause_selection = (pause_selection + 2) % 3
+					pause_selection = (pause_selection + 3) % 4
 				KEY_DOWN, KEY_S:
-					pause_selection = (pause_selection + 1) % 3
+					pause_selection = (pause_selection + 1) % 4
 				KEY_ENTER, KEY_KP_ENTER:
 					select_pause_menu(pause_selection)
 				KEY_ESCAPE:
@@ -2063,6 +2149,93 @@ func _unhandled_input(event: InputEvent) -> void:
 
 
 # ==========================================
+# 音效系统（v0.20.0）
+# 全部代码合成，零素材。每个音效预建 3 个播放器轮转，
+# 避免同一个音效连续触发时被截断。
+# ==========================================
+
+const SFX_POOL_SIZE := 3
+
+
+func init_audio() -> void:
+	if audio_ready:
+		return
+	sfx_cache = AudioSynth.build_all()
+
+	for key in sfx_cache.keys():
+		var pool: Array[AudioStreamPlayer] = []
+		for i in range(SFX_POOL_SIZE):
+			var player := AudioStreamPlayer.new()
+			player.stream = sfx_cache[key]
+			player.volume_db = -80.0
+			player.bus = "Master"
+			add_child(player)
+			pool.append(player)
+		sfx_players[key] = pool
+
+	audio_ready = true
+	apply_audio_volume()
+
+
+# 播放音效
+func play_sfx(stream_name: String) -> void:
+	if not audio_ready or sfx_volume <= 0.001:
+		return
+	if not sfx_players.has(stream_name):
+		return
+
+	var pool: Array = sfx_players[stream_name]
+	# 找一个空闲的，都忙就抢占第一个
+	var chosen: AudioStreamPlayer = pool[0]
+	for p in pool:
+		if not p.playing:
+			chosen = p
+			break
+
+	chosen.play()
+
+
+# 应用音量（0.0 ~ 1.0 转 dB）
+func apply_audio_volume() -> void:
+	var db := linear_to_db(maxf(0.0001, sfx_volume))
+	for key in sfx_players.keys():
+		for p in sfx_players[key]:
+			p.volume_db = db
+
+
+func set_sfx_volume(value: float) -> void:
+	sfx_volume = clampf(value, 0.0, 1.0)
+	apply_audio_volume()
+	save_settings()
+
+
+# 设置存到独立文件（跨存档共享）
+func save_settings() -> void:
+	var data := {"sfx_volume": sfx_volume}
+	var file := FileAccess.open(SETTINGS_PATH, FileAccess.WRITE)
+	if file == null:
+		return
+	file.store_string(JSON.stringify(data, "\t"))
+	file.close()
+
+
+func load_settings() -> void:
+	if not FileAccess.file_exists(SETTINGS_PATH):
+		return
+	var file := FileAccess.open(SETTINGS_PATH, FileAccess.READ)
+	if file == null:
+		return
+	var text := file.get_as_text()
+	file.close()
+	var parsed = JSON.parse_string(text)
+	if typeof(parsed) != TYPE_DICTIONARY:
+		return
+	var data: Dictionary = parsed
+	sfx_volume = clampf(float(data.get("sfx_volume", SFX_DEFAULT_VOLUME)), 0.0, 1.0)
+	apply_audio_volume()
+
+
+# ==========================================
 # 主菜单与暂停（v0.17.0）
 # ==========================================
 
@@ -2083,6 +2256,10 @@ func select_main_menu(index: int) -> void:
 			var latest := find_latest_slot()
 			slot_hover = maxi(0, latest - 1)
 		2:
+			in_settings = true
+			settings_from_menu = true
+			settings_selection = 0
+		3:
 			get_tree().quit()
 
 
@@ -2257,6 +2434,10 @@ func select_pause_menu(index: int) -> void:
 			slot_select_mode = "save"
 			slot_hover = current_slot - 1
 		2:
+			in_settings = true
+			settings_from_menu = false
+			settings_selection = 0
+		3:
 			# 返回主菜单前自动存一次
 			is_paused = false
 			save_game()
@@ -2276,7 +2457,7 @@ func get_menu_item_rect(index: int) -> Rect2:
 
 
 func get_menu_index_at(pos: Vector2) -> int:
-	for i in range(3):
+	for i in range(4):
 		if get_menu_item_rect(i).has_point(pos):
 			return i
 	return -1
@@ -2295,7 +2476,7 @@ func get_pause_item_rect(index: int) -> Rect2:
 
 
 func get_pause_index_at(pos: Vector2) -> int:
-	for i in range(3):
+	for i in range(4):
 		if get_pause_item_rect(i).has_point(pos):
 			return i
 	return -1
@@ -2326,7 +2507,7 @@ func draw_main_menu() -> void:
 		Color("#7fbfa0")
 	)
 
-	var labels := ["开始游戏", "载入存档", "退出"]
+	var labels := ["开始游戏", "载入存档", "设置", "退出"]
 	var hovered := get_hovered_menu_index()
 	var has_saved := has_any_save()
 
@@ -2418,10 +2599,10 @@ func draw_pause_menu() -> void:
 		Color("#ffd76e")
 	)
 
-	var labels := ["继续游戏", "保存进度", "返回主菜单"]
+	var labels := ["继续游戏", "保存进度", "设置", "返回主菜单"]
 	var hovered := get_hovered_pause_index()
 
-	for i in range(3):
+	for i in range(4):
 		var rect := get_pause_item_rect(i)
 		var is_hover := (i == hovered) or (i == pause_selection and hovered < 0)
 
@@ -2711,6 +2892,144 @@ func load_game(slot: int = -1) -> bool:
 	return true
 
 
+# ==========================================
+# 设置界面（v0.20.0）
+# 目前只有音量一项，后续可扩展画面等
+# ==========================================
+
+func get_settings_item_rect(index: int) -> Rect2:
+	var w := 460.0 * ui_scale
+	var h := 56.0 * ui_scale
+	var gap := 14.0 * ui_scale
+	var start_y := screen_size.y / 2.0 - 70.0 * ui_scale
+	return Rect2(
+		Vector2(screen_size.x / 2.0 - w / 2.0, start_y + float(index) * (h + gap)),
+		Vector2(w, h)
+	)
+
+
+func get_settings_index_at(pos: Vector2) -> int:
+	for i in range(3):
+		if get_settings_item_rect(i).has_point(pos):
+			return i
+	return -1
+
+
+# 音量滑杆区域（在设置项内部右侧）
+func get_volume_slider_rect(index: int) -> Rect2:
+	var item := get_settings_item_rect(index)
+	return Rect2(
+		Vector2(item.position.x + 150.0 * ui_scale, item.position.y + item.size.y / 2.0 - 6.0),
+		Vector2(item.size.x - 190.0 * ui_scale, 12.0)
+	)
+
+
+# 鼠标 x 坐标 → 音量值
+func slider_value_at(index: int, mouse_x: float) -> float:
+	var bar := get_volume_slider_rect(index)
+	return clampf((mouse_x - bar.position.x) / maxf(1.0, bar.size.x), 0.0, 1.0)
+
+
+func select_settings(index: int) -> void:
+	match index:
+		0:
+			# 音效音量：点一下切到 100%
+			set_sfx_volume(1.0)
+			play_sfx("click")
+		1:
+			# 静音开关
+			set_sfx_volume(0.0 if sfx_volume > 0.001 else SFX_DEFAULT_VOLUME)
+		2:
+			# 返回
+			in_settings = false
+			if not settings_from_menu:
+				is_paused = true
+
+
+func draw_settings() -> void:
+	draw_rect(Rect2(Vector2.ZERO, screen_size), Color("#0d1512"))
+
+	draw_string(
+		ThemeDB.fallback_font,
+		Vector2(0, screen_size.y / 2.0 - 130.0 * ui_scale),
+		"设 置",
+		HORIZONTAL_ALIGNMENT_CENTER,
+		screen_size.x,
+		36,
+		Color("#ffd76e")
+	)
+
+	var labels := ["音效音量", "静音", "返回"]
+	var hovered := get_settings_index_at(get_viewport().get_mouse_position())
+
+	for i in range(3):
+		var rect := get_settings_item_rect(i)
+		var is_hover := (i == hovered) or (i == settings_selection and hovered < 0)
+
+		if is_hover:
+			draw_rect(rect, Color("#1e3a2e"))
+			draw_rect(rect, Color("#ffd76e"), false, 2.0)
+		else:
+			draw_rect(rect, Color("#16261f"))
+			draw_rect(rect, Color("#3f6b55"), false, 1.0)
+
+		draw_string(
+			ThemeDB.fallback_font,
+			Vector2(rect.position.x + 20.0, rect.position.y + rect.size.y / 2.0 + 7.0),
+			labels[i],
+			HORIZONTAL_ALIGNMENT_LEFT,
+			200.0,
+			20,
+			Color("#ffd76e") if is_hover else Color("#c8e8d8")
+		)
+
+		# 第 1 项画滑杆，第 2 项画开关状态
+		if i == 0:
+			var bar := get_volume_slider_rect(i)
+			draw_rect(bar, Color("#0d1a14"))
+			draw_rect(bar, Color("#3f6b55"), false, 1.0)
+			draw_rect(
+				Rect2(bar.position, Vector2(bar.size.x * sfx_volume, bar.size.y)),
+				Color("#6fd8a0")
+			)
+			# 滑块头
+			var knob_x := bar.position.x + bar.size.x * sfx_volume
+			draw_rect(
+				Rect2(Vector2(knob_x - 4.0, bar.position.y - 4.0), Vector2(8.0, bar.size.y + 8.0)),
+				Color("#ffd76e")
+			)
+			draw_string(
+				ThemeDB.fallback_font,
+				Vector2(bar.position.x + bar.size.x + 12.0, rect.position.y + rect.size.y / 2.0 + 6.0),
+				str(int(round(sfx_volume * 100.0))) + "%",
+				HORIZONTAL_ALIGNMENT_LEFT,
+				60.0,
+				16,
+				Color("#9ecfff")
+			)
+		elif i == 1:
+			var on := sfx_volume > 0.001
+			draw_string(
+				ThemeDB.fallback_font,
+				Vector2(rect.position.x + 200.0, rect.position.y + rect.size.y / 2.0 + 7.0),
+				"开" if on else "关",
+				HORIZONTAL_ALIGNMENT_LEFT,
+				100.0,
+				20,
+				Color("#6fd8a0") if on else Color("#8a5a5a")
+			)
+
+	draw_string(
+		ThemeDB.fallback_font,
+		Vector2(0, screen_size.y - 60.0),
+		"↑↓ 选择    ←→ 调音量    鼠标点击或拖动滑杆    ESC 返回",
+		HORIZONTAL_ALIGNMENT_CENTER,
+		screen_size.x,
+		15,
+		Color("#5f8f75")
+	)
+
+
 func restart_game() -> void:
 	player_max_hp = 100
 	player_hp = player_max_hp
@@ -2943,6 +3262,11 @@ func draw_bottom_hud() -> void:
 
 
 func _draw() -> void:
+	# 设置界面独占画面（v0.20.0）
+	if in_settings:
+		draw_settings()
+		return
+
 	# 槽位选择独占画面（v0.19.0）
 	if not slot_select_mode.is_empty():
 		draw_slot_select()

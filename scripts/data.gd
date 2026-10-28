@@ -387,3 +387,105 @@ const REALM_SCENES := [
 	"山门初境", "幽谷灵泉", "赤岩火脉", "罡风荒原", "寒潭冰窟",
 	"太虚星海", "太虚星海", "太虚星海", "太虚星海", "太虚星海",
 ]
+
+# ==========================================
+# 音效参数表（v0.20.0）
+# 全部用代码合成，零外部素材、零版权风险
+# type: sine 正弦 / square 方波 / noise 噪声 / sweep 扫频 / chord 和弦
+# ==========================================
+const SFX := {
+	# 剑气发射：短促上扬
+	"shoot": {
+		"type": "sweep",
+		"freq_start": 880.0, "freq_end": 1320.0,
+		"duration": 0.07, "volume": 0.22, "decay": 2.5,
+	},
+	# 命中妖兽：短噪声
+	"hit": {
+		"type": "noise",
+		"freq_start": 420.0, "freq_end": 260.0,
+		"duration": 0.06, "volume": 0.28, "decay": 3.0,
+	},
+	# 暴击：明亮双音
+	"crit": {
+		"type": "chord",
+		"freq_start": 1046.0, "freq_end": 1568.0,
+		"duration": 0.16, "volume": 0.34, "decay": 2.0,
+	},
+	# 玩家受伤：低沉下坠
+	"hurt": {
+		"type": "sweep",
+		"freq_start": 220.0, "freq_end": 110.0,
+		"duration": 0.20, "volume": 0.36, "decay": 1.8,
+	},
+	# 妖兽死亡：噪声爆
+	"kill": {
+		"type": "noise",
+		"freq_start": 300.0, "freq_end": 120.0,
+		"duration": 0.14, "volume": 0.26, "decay": 2.2,
+	},
+	# 拾取晶石：清脆上扬
+	"orb": {
+		"type": "sine",
+		"freq_start": 1318.0, "freq_end": 1760.0,
+		"duration": 0.09, "volume": 0.18, "decay": 3.0,
+	},
+	# 升级：四音上行
+	"levelup": {
+		"type": "chord",
+		"freq_start": 523.0, "freq_end": 1046.0,
+		"duration": 0.45, "volume": 0.40, "decay": 1.2,
+	},
+	# 破境/渡劫：庄重长音
+	"realm": {
+		"type": "chord",
+		"freq_start": 392.0, "freq_end": 784.0,
+		"duration": 0.70, "volume": 0.44, "decay": 0.9,
+	},
+	# 飞剑释放：金属扫频
+	"sword": {
+		"type": "sweep",
+		"freq_start": 1600.0, "freq_end": 400.0,
+		"duration": 0.35, "volume": 0.38, "decay": 1.5,
+	},
+	# 符箓释放：柔和闪音
+	"talisman": {
+		"type": "sine",
+		"freq_start": 784.0, "freq_end": 1174.0,
+		"duration": 0.22, "volume": 0.30, "decay": 1.6,
+	},
+	# 阵法展开：低频铺底
+	"formation": {
+		"type": "sine",
+		"freq_start": 196.0, "freq_end": 294.0,
+		"duration": 0.50, "volume": 0.32, "decay": 1.1,
+	},
+	# 首领登场：低沉压迫
+	"boss": {
+		"type": "chord",
+		"freq_start": 98.0, "freq_end": 147.0,
+		"duration": 1.00, "volume": 0.46, "decay": 0.7,
+	},
+	# 胜利飞升：明亮大和弦
+	"win": {
+		"type": "chord",
+		"freq_start": 523.0, "freq_end": 1568.0,
+		"duration": 1.40, "volume": 0.50, "decay": 0.6,
+	},
+	# 失败：下坠长音
+	"lose": {
+		"type": "sweep",
+		"freq_start": 330.0, "freq_end": 82.0,
+		"duration": 1.20, "volume": 0.44, "decay": 0.8,
+	},
+	# UI 点击：轻快
+	"click": {
+		"type": "sine",
+		"freq_start": 660.0, "freq_end": 880.0,
+		"duration": 0.05, "volume": 0.16, "decay": 3.5,
+	},
+}
+
+# 默认音量（0.0 ~ 1.0）
+const SFX_DEFAULT_VOLUME := 0.7
+const BGM_DEFAULT_VOLUME := 0.5
