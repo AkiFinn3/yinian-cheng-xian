@@ -103,6 +103,20 @@ const TALISMANS := {
 const MAX_TALISMANS := 5
 
 # ==========================================
+# 阵法（v0.14.0）：场地增益，最多 2 个，F 放置
+# 持续 15 秒，站进去生效
+# ==========================================
+const FORMATIONS := {
+	"聚灵阵": {"desc": "阵内修为 +50%",     "radius": 180.0, "type": "xp",     "value": 50.0},
+	"杀阵":   {"desc": "阵内妖兽 15 伤/秒", "radius": 160.0, "type": "damage", "value": 15.0},
+	"护体阵": {"desc": "阵内减伤 +40%",     "radius": 150.0, "type": "armor",  "value": 40.0},
+	"疾风阵": {"desc": "阵内移速 +80%",     "radius": 200.0, "type": "haste",  "value": 80.0},
+}
+
+const MAX_FORMATIONS := 2
+const FORMATION_LIFETIME := 15.0
+
+# ==========================================
 # 飞剑（v0.13.0）：境界解锁，空格释放，8 秒冷却
 # ==========================================
 const FLYING_SWORDS := {
@@ -426,6 +440,11 @@ var sword_cooldown: float = 0.0             # 飞剑冷却
 var invincible_timer: float = 0.0           # 护身符无敌
 var haste_timer: float = 0.0                # 疾行符加速
 
+# 阵法（v0.14.0）
+var formation_bag: Array[String] = []
+var active_formation: Dictionary = {}   # {name, pos, life, radius, type, value}
+var formation_tick: float = 0.0
+
 # 法器（v0.11.0）
 var artifacts: Array[String] = []           # 已装备法器名
 var artifact_drop_pending: bool = false
@@ -516,6 +535,7 @@ func _process(delta: float) -> void:
 	update_enemies(delta)
 	update_projectiles(delta)
 	update_orbs(delta)
+	update_formation(delta)
 	update_auto_attack()
 
 	queue_redraw()
@@ -556,6 +576,7 @@ func update_player(delta: float) -> void:
 		direction = direction.normalized()
 
 	var current_speed := player_speed + speed_bonus
+	current_speed *= (1.0 + get_formation_bonus("haste") / 100.0)
 	if haste_timer > 0.0:
 		current_speed *= 2.5
 	var move_vec := direction * current_speed * delta
@@ -611,6 +632,9 @@ func update_enemies(delta: float) -> void:
 			# 不灭灯：生命低于 30% 时额外减伤
 			if low_hp_armor > 0.0 and float(player_hp) / float(player_max_hp) < 0.3:
 				reduction = clampf(reduction + low_hp_armor / 100.0, 0.0, 0.85)
+
+			# 护体阵：阵内额外减伤
+			reduction = clampf(reduction + get_formation_bonus("armor") / 100.0, 0.0, 0.9)
 			var actual_damage := maxi(1, int(round(float(enemy_damage) * (1.0 - reduction))))
 			player_hp -= actual_damage
 			damage_cooldown = 0.8
@@ -875,7 +899,8 @@ func update_orbs(delta: float) -> void:
 
 		# 拾取
 		if dist <= ORB_PICKUP_RADIUS:
-			var gained := int(round(float(o["value"]) * (1.0 + xp_bonus / 100.0)))
+			var xp_mul := 1.0 + xp_bonus / 100.0 + get_formation_bonus("xp") / 100.0
+			var gained := int(round(float(o["value"]) * xp_mul))
 			cultivation += gained
 			orbs.remove_at(i)
 			check_level_up()
@@ -969,6 +994,11 @@ func kill_enemy(index: int) -> void:
 	var talisman_chance := 0.40 if is_elite else 0.08
 	if randf() < talisman_chance:
 		roll_talisman_drop()
+
+	# 阵法掉落：普通 3%，精英 10%
+	var formation_chance := 0.10 if is_elite else 0.03
+	if randf() < formation_chance:
+		roll_formation_drop()
 
 	# 升级由晶石拾取时触发，这里只补怪
 	refill_enemies()
@@ -1230,6 +1260,100 @@ func apply_skill_effect(skill_name: String) -> void:
 # ==========================================
 # 符箓
 # ==========================================
+
+# ==========================================
+# 阵法
+# ==========================================
+
+# 获得阵法
+func add_formation(name: String) -> void:
+	if not FORMATIONS.has(name):
+		return
+	if formation_bag.size() >= MAX_FORMATIONS:
+		formation_bag.remove_at(0)
+	formation_bag.append(name)
+	message_text = "获得阵法：" + name
+	message_timer = 1.5
+
+
+# 随机掉落阵法
+func roll_formation_drop() -> void:
+	var keys: Array = FORMATIONS.keys()
+	if keys.size() == 0:
+		return
+	add_formation(str(keys[randi_range(0, keys.size() - 1)]))
+
+
+# 放置阵法（脚下）
+func place_formation() -> void:
+	if formation_bag.size() == 0:
+		return
+	if not active_formation.is_empty():
+		return   # 同时只能有一个
+
+	var name: String = formation_bag[0]
+	var data: Dictionary = FORMATIONS[name]
+
+	active_formation = {
+		"name": name,
+		"pos": player_pos,
+		"life": FORMATION_LIFETIME,
+		"radius": float(data["radius"]),
+		"type": str(data["type"]),
+		"value": float(data["value"]),
+	}
+
+	formation_bag.remove_at(0)
+	message_text = "布下阵法：" + name
+	message_timer = 1.5
+
+
+# 玩家是否在阵内
+func is_player_in_formation() -> bool:
+	if active_formation.is_empty():
+		return false
+	return (active_formation["pos"] as Vector2).distance_to(player_pos) <= float(active_formation["radius"])
+
+
+# 阵法每帧更新
+func update_formation(delta: float) -> void:
+	if active_formation.is_empty():
+		return
+
+	active_formation["life"] = float(active_formation["life"]) - delta
+	if float(active_formation["life"]) <= 0.0:
+		active_formation.clear()
+		return
+
+	var in_zone := is_player_in_formation()
+	if not in_zone:
+		return
+
+	# 杀阵：每秒伤害阵内妖兽
+	if str(active_formation["type"]) == "damage":
+		formation_tick += delta
+		if formation_tick >= 1.0:
+			formation_tick = 0.0
+			var dmg := int(active_formation["value"])
+			var center: Vector2 = active_formation["pos"]
+			var radius := float(active_formation["radius"])
+			for i in range(enemies.size() - 1, -1, -1):
+				var e: Dictionary = enemies[i]
+				if (e["pos"] as Vector2).distance_to(center) <= radius:
+					e["hp"] = int(e["hp"]) - dmg
+					e["hit_flash"] = 0.12
+					if int(e["hp"]) <= 0:
+						kill_enemy(i)
+
+
+# 当前阵法提供的加成
+func get_formation_bonus(type: String) -> float:
+	if not is_player_in_formation():
+		return 0.0
+	if str(active_formation["type"]) != type:
+		return 0.0
+	return float(active_formation["value"])
+
 
 # 获得符箓（满了则替换最旧）
 func add_talisman(name: String) -> void:
@@ -1606,6 +1730,10 @@ func choose_tribulation_reward(index: int) -> void:
 	if artifacts.size() < MAX_ARTIFACTS and randf() < 0.20:
 		roll_artifact_choices()
 
+	# 25% 额外掉阵法
+	if randf() < 0.25:
+		roll_formation_drop()
+
 	# 奖励选完才真正推进境界
 	if pending_realm_advance:
 		pending_realm_advance = false
@@ -1851,6 +1979,9 @@ func _unhandled_input(event: InputEvent) -> void:
 				KEY_SPACE:
 					use_flying_sword()
 					return
+				KEY_F:
+					place_formation()
+					return
 
 		if is_game_over:
 			if event.keycode == KEY_R:
@@ -1911,6 +2042,10 @@ func restart_game() -> void:
 	boss_active = false
 
 	distance_traveled = 0.0
+	formation_bag.clear()
+	active_formation.clear()
+	formation_tick = 0.0
+
 	talisman_bag.clear()
 	selected_talisman = 0
 	unlocked_sword = ""
@@ -2074,6 +2209,24 @@ func draw_bottom_hud() -> void:
 			"active": i == selected_talisman,
 		})
 
+	# 阵法
+	if not active_formation.is_empty():
+		icons.append({
+			"label": "阵",
+			"sub": "%.0fs" % float(active_formation["life"]),
+			"color": Color("#6fd8a0"),
+			"ready": true,
+			"active": true,
+		})
+	elif formation_bag.size() > 0:
+		icons.append({
+			"label": "阵",
+			"sub": "F",
+			"color": Color("#6fd8a0"),
+			"ready": true,
+			"active": false,
+		})
+
 	# 法器（显示为图标）
 	for a in artifacts:
 		icons.append({
@@ -2158,6 +2311,37 @@ func _draw() -> void:
 			90,
 			14,
 			Color("#ff9b4a") if e.has("tribulation") else Color("#e8d8ff")
+		)
+
+	# 阵法（地面光圈）
+	if not active_formation.is_empty():
+		var fpos: Vector2 = w2s(active_formation["pos"])
+		var frad := float(active_formation["radius"])
+		var flife := float(active_formation["life"])
+		var alpha := clampf(flife / 3.0, 0.15, 0.55)
+
+		var fcolor := Color("#6fd8a0")
+		match str(active_formation["type"]):
+			"damage": fcolor = Color("#e05a5a")
+			"armor":  fcolor = Color("#6f9fe0")
+			"haste":  fcolor = Color("#e0d06f")
+			"xp":     fcolor = Color("#6fd8a0")
+
+		# 外圈
+		draw_arc(fpos, frad, 0.0, TAU, 48, Color(fcolor.r, fcolor.g, fcolor.b, alpha), 3.0, true)
+		# 内圈
+		draw_arc(fpos, frad * 0.55, 0.0, TAU, 32, Color(fcolor.r, fcolor.g, fcolor.b, alpha * 0.6), 2.0, true)
+		# 填充
+		draw_circle(fpos, frad, Color(fcolor.r, fcolor.g, fcolor.b, alpha * 0.12))
+		# 名字
+		draw_string(
+			ThemeDB.fallback_font,
+			fpos + Vector2(-60.0, -frad - 8.0),
+			str(active_formation["name"]) + " %.0fs" % flife,
+			HORIZONTAL_ALIGNMENT_CENTER,
+			120,
+			14,
+			Color(fcolor.r, fcolor.g, fcolor.b, 0.9)
 		)
 
 	# 修为晶石
