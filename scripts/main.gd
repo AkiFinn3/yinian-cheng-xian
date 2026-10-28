@@ -250,6 +250,20 @@ var learned_skills: Array[String] = []
 var screen_size: Vector2 = Vector2(960, 600)
 var camera_offset: Vector2 = Vector2.ZERO   # 世界坐标 → 屏幕坐标的偏移
 var ui_scale: float = 1.0                   # UI 缩放（小窗口自动缩小）
+
+# ==========================================
+# 手机触摸控制（v0.26.0）
+# 触摸优先、键盘兼容：两种输入同时有效
+# ==========================================
+var is_touch_device: bool = false      # 是否为触摸设备（自动检测）
+var joystick_active: bool = false      # 摇杆是否被按住
+var joystick_center: Vector2 = Vector2.ZERO   # 摇杆基座位置
+var joystick_touch_index: int = -1     # 占用摇杆的手指 ID
+var joystick_dir: Vector2 = Vector2.ZERO      # 摇杆输出的方向（已归一化）
+
+# 技能按钮（右下角）
+var touch_buttons: Array = []          # [{id, pos, radius, label}]
+var touch_button_pressed: int = -1     # 当前按下的按钮索引
 var distance_traveled: float = 0.0          # 累计移动距离（保留，暂不参与计算）
 var message_timer: float = 0.0
 var message_text: String = ""
@@ -281,13 +295,25 @@ func _ready() -> void:
 	init_audio()
 	load_textures()
 	load_settings()
+	# 触摸设备检测与控件构建（v0.26.0）
+	detect_touch_device()
+	build_touch_buttons()
 	queue_redraw()
 
 
 func _process(delta: float) -> void:
-	screen_size = get_viewport_rect().size
+	var new_size := get_viewport_rect().size
 	# UI 自适应：窗口小于 1100 宽时按比例缩小
-	ui_scale = clampf(screen_size.x / 1280.0, 0.65, 1.0)
+	var new_scale := clampf(new_size.x / 1280.0, 0.65, 1.0)
+
+	# 窗口尺寸或缩放变化时，重建触摸按钮位置（v0.26.0）
+	if new_size != screen_size or not is_equal_approx(new_scale, ui_scale):
+		screen_size = new_size
+		ui_scale = new_scale
+		build_touch_buttons()
+	else:
+		screen_size = new_size
+		ui_scale = new_scale
 
 	# 设置界面：不跑游戏逻辑
 	if in_settings:
@@ -377,9 +403,155 @@ func s2w(p: Vector2) -> Vector2:
 	return p - camera_offset
 
 
+# ==========================================
+# 手机触摸控制（v0.26.0）
+# ==========================================
+
+# 检测是否为触摸设备（v0.26.0）
+# 注意：不能只用 DisplayServer.is_touchscreen_available()，
+# 因为 Mac 触控板也会让它返回 true，导致桌面也显示虚拟摇杆
+func detect_touch_device() -> void:
+	# 明确的移动端平台 → 触摸
+	if OS.has_feature("mobile") or OS.has_feature("web_android") or OS.has_feature("web_ios"):
+		is_touch_device = true
+		return
+
+	# Web 平台：检查浏览器是否支持触摸且没有精确指针（区分手机/平板与桌面浏览器）
+	if OS.has_feature("web"):
+		var has_touch := DisplayServer.is_touchscreen_available()
+		# 触屏可用 + 屏幕窄（手机/平板竖屏或小窗）→ 触摸模式
+		var vp := get_viewport().get_visible_rect().size
+		if has_touch and vp.x <= 1024.0:
+			is_touch_device = true
+		return
+
+	# 桌面平台一律不启用虚拟摇杆（键盘鼠标足够）
+	is_touch_device = false
+
+
+# 摇杆基座半径与手柄最大偏移
+func get_joystick_radius() -> float:
+	return 90.0 * ui_scale
+
+
+func get_joystick_center() -> Vector2:
+	# 左下角固定位置
+	return Vector2(110.0 * ui_scale, screen_size.y - 130.0 * ui_scale)
+
+
+# 构建技能按钮（右下角竖排）
+func build_touch_buttons() -> void:
+	touch_buttons.clear()
+	if not is_touch_device:
+		return
+
+	var r := 38.0 * ui_scale
+	var gap := 20.0 * ui_scale
+	var base_x := screen_size.x - 80.0 * ui_scale
+	var base_y := screen_size.y - 100.0 * ui_scale
+
+	# 从下往上：符箓 / 飞剑 / 阵法 / 切换符箓
+	var defs := [
+		{"id": "talisman", "label": "符", "color": "#C9A227"},
+		{"id": "sword", "label": "剑", "color": "#F2EDE3"},
+		{"id": "formation", "label": "阵", "color": "#4A8C82"},
+		{"id": "cycle", "label": "换", "color": "#9A8A74"},
+	]
+	for i in range(defs.size()):
+		var d: Dictionary = defs[i]
+		touch_buttons.append({
+			"id": str(d["id"]),
+			"label": str(d["label"]),
+			"color": str(d["color"]),
+			"pos": Vector2(base_x, base_y - float(i) * (r * 2.0 + gap)),
+			"radius": r,
+		})
+
+
+# 判断某点是否在按钮内，返回索引
+func get_touch_button_at(pos: Vector2) -> int:
+	for i in range(touch_buttons.size()):
+		var b: Dictionary = touch_buttons[i]
+		if pos.distance_to(b["pos"] as Vector2) <= float(b["radius"]):
+			return i
+	return -1
+
+
+# 执行按钮动作
+func trigger_touch_button(index: int) -> void:
+	if index < 0 or index >= touch_buttons.size():
+		return
+	var id := str(touch_buttons[index]["id"])
+	match id:
+		"talisman":
+			use_talisman()
+		"sword":
+			use_flying_sword()
+		"formation":
+			place_formation()
+		"cycle":
+			cycle_talisman()
+	play_sfx("click")
+
+
+# 处理触摸开始
+func handle_touch_pressed(pos: Vector2, index: int) -> bool:
+	# 游戏内（非菜单）才响应虚拟控制
+	if in_main_menu or is_paused or in_settings or not slot_select_mode.is_empty():
+		return false
+	if is_game_over or upgrade_pending or path_choice_pending \
+			or tribulation_reward_pending or artifact_drop_pending:
+		return false
+
+	# 优先判断技能按钮
+	var bi := get_touch_button_at(pos)
+	if bi >= 0:
+		touch_button_pressed = bi
+		trigger_touch_button(bi)
+		return true
+
+	# 左半屏 → 摇杆
+	var center := get_joystick_center()
+	var radius := get_joystick_radius()
+	if pos.distance_to(center) <= radius * 1.8:
+		joystick_active = true
+		joystick_touch_index = index
+		joystick_center = pos
+		joystick_dir = Vector2.ZERO
+		return true
+
+	return false
+
+
+# 处理触摸拖动
+func handle_touch_drag(pos: Vector2, index: int) -> void:
+	if not joystick_active or index != joystick_touch_index:
+		return
+	var delta := pos - joystick_center
+	var radius := get_joystick_radius()
+	if delta.length() < radius * 0.15:
+		joystick_dir = Vector2.ZERO
+		return
+	joystick_dir = delta.normalized()
+	# 幅度限制
+	var mag := minf(1.0, delta.length() / radius)
+	joystick_dir *= mag
+
+
+# 处理触摸结束
+func handle_touch_released(index: int) -> void:
+	if index == joystick_touch_index:
+		joystick_active = false
+		joystick_touch_index = -1
+		joystick_dir = Vector2.ZERO
+	if index == touch_button_pressed:
+		touch_button_pressed = -1
+
+
 func update_player(delta: float) -> void:
 	var direction := Vector2.ZERO
 
+	# 键盘输入（桌面）
 	if Input.is_key_pressed(KEY_W) or Input.is_action_pressed("ui_up"):
 		direction.y -= 1.0
 	if Input.is_key_pressed(KEY_S) or Input.is_action_pressed("ui_down"):
@@ -389,7 +561,11 @@ func update_player(delta: float) -> void:
 	if Input.is_key_pressed(KEY_D) or Input.is_action_pressed("ui_right"):
 		direction.x += 1.0
 
-	if direction.length() > 0.0:
+	# 触摸摇杆输入（手机）优先于键盘
+	if joystick_active and joystick_dir.length() > 0.01:
+		direction = joystick_dir
+
+	if direction.length() > 1.0:
 		direction = direction.normalized()
 
 	var current_speed := player_speed + speed_bonus
@@ -2210,6 +2386,21 @@ func get_hovered_skill_index() -> int:
 
 
 func _input(event: InputEvent) -> void:
+	# ===== 触摸输入（v0.26.0，手机）=====
+	if event is InputEventScreenTouch:
+		if event.pressed:
+			if handle_touch_pressed(event.position, event.index):
+				get_viewport().set_input_as_handled()
+		else:
+			handle_touch_released(event.index)
+			get_viewport().set_input_as_handled()
+		return
+
+	if event is InputEventScreenDrag:
+		handle_touch_drag(event.position, event.index)
+		get_viewport().set_input_as_handled()
+		return
+
 	# 设置界面鼠标操作（v0.20.0）
 	if in_settings:
 		if event is InputEventMouseButton and event.pressed and event.button_index == MOUSE_BUTTON_LEFT:
@@ -3475,6 +3666,53 @@ func draw_hud_icon(pos: Vector2, label: String, sub: String, color: Color, ready
 	)
 
 
+# ==========================================
+# 触摸虚拟控件绘制（v0.26.0）
+# 左下摇杆 + 右下技能按钮
+# ==========================================
+
+func draw_touch_controls() -> void:
+	# ---- 虚拟摇杆 ----
+	var center := get_joystick_center() if not joystick_active else joystick_center
+	var radius := get_joystick_radius()
+
+	# 基座外圈
+	draw_circle(center, radius, Color(0.79, 0.63, 0.15, 0.18))
+	draw_arc(center, radius, 0.0, TAU, 32, Color("#C9A227"), 2.0)
+	# 内圈
+	draw_circle(center, radius * 0.45, Color(0.95, 0.93, 0.89, 0.12))
+
+	# 手柄（跟随触摸方向）
+	var knob_pos := center + joystick_dir * radius
+	draw_circle(knob_pos, radius * 0.32, Color(0.79, 0.63, 0.15, 0.55))
+	draw_arc(knob_pos, radius * 0.32, 0.0, TAU, 24, Color("#F2EDE3"), 2.0)
+
+	# ---- 技能按钮 ----
+	for i in range(touch_buttons.size()):
+		var b: Dictionary = touch_buttons[i]
+		var bpos: Vector2 = b["pos"]
+		var br := float(b["radius"])
+		var bcolor := Color(str(b["color"]))
+		var pressed := (i == touch_button_pressed)
+
+		# 按钮底
+		var bg := Color(0.11, 0.09, 0.08, 0.75) if not pressed else Color(0.20, 0.17, 0.13, 0.9)
+		draw_circle(bpos, br, bg)
+		# 描边
+		draw_arc(bpos, br, 0.0, TAU, 28, bcolor, 2.5 if pressed else 2.0)
+
+		# 文字
+		draw_string(
+			ThemeDB.fallback_font,
+			bpos + Vector2(-br * 0.55, br * 0.3),
+			str(b["label"]),
+			HORIZONTAL_ALIGNMENT_CENTER,
+			br * 1.1,
+			int(br * 0.85),
+			bcolor
+		)
+
+
 func draw_bottom_hud() -> void:
 	if is_game_over:
 		return
@@ -4312,6 +4550,10 @@ func _draw() -> void:
 	# 底部 HUD（网游式）
 	# ==========================================
 	draw_bottom_hud()
+
+	# 触摸虚拟控件（v0.26.0，仅触摸设备）
+	if is_touch_device:
+		draw_touch_controls()
 
 	# 暂停菜单（v0.17.0）
 	if is_paused:
