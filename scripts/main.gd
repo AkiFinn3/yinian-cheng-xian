@@ -125,6 +125,12 @@ var is_game_over: bool = false
 
 # 妖兽数组（阶段 9：同屏多只）
 # 每只妖兽是一个 Dictionary：type/pos/speed/size/max_hp/hp/hit_flash
+# 主菜单与暂停（v0.17.0）
+var in_main_menu: bool = true          # 启动先进主菜单
+var is_paused: bool = false            # 游戏中按 ESC 暂停
+var menu_selection: int = 0            # 主菜单当前高亮项
+var pause_selection: int = 0           # 暂停菜单当前高亮项
+
 # 障碍物（v0.16.0）：按世界格哈希生成，走到哪生成到哪
 var obstacles: Array = []
 var obstacle_cells: Dictionary = {}     # 已生成过的格子，避免重复
@@ -239,7 +245,9 @@ func _ready() -> void:
 	screen_size = get_viewport_rect().size
 	player_pos = Vector2.ZERO
 	update_camera()
-	reset_enemies()
+	# 先进主菜单，玩家点「开始」才真正开局（v0.17.0）
+	in_main_menu = true
+	is_paused = false
 	queue_redraw()
 
 
@@ -247,6 +255,16 @@ func _process(delta: float) -> void:
 	screen_size = get_viewport_rect().size
 	# UI 自适应：窗口小于 1100 宽时按比例缩小
 	ui_scale = clampf(screen_size.x / 1280.0, 0.65, 1.0)
+
+	# 主菜单：不跑任何游戏逻辑
+	if in_main_menu:
+		queue_redraw()
+		return
+
+	# 暂停：冻结一切（但保留重绘，菜单要能画）
+	if is_paused:
+		queue_redraw()
+		return
 
 	if is_game_over:
 		queue_redraw()
@@ -1853,6 +1871,28 @@ func get_hovered_skill_index() -> int:
 
 
 func _input(event: InputEvent) -> void:
+	# 主菜单鼠标操作（v0.17.0）
+	if in_main_menu:
+		if event is InputEventMouseButton and event.pressed and event.button_index == MOUSE_BUTTON_LEFT:
+			var mi := get_menu_index_at(event.position)
+			if mi >= 0:
+				select_main_menu(mi)
+				get_viewport().set_input_as_handled()
+		elif event is InputEventMouseMotion:
+			queue_redraw()
+		return
+
+	# 暂停菜单鼠标操作（v0.17.0）
+	if is_paused:
+		if event is InputEventMouseButton and event.pressed and event.button_index == MOUSE_BUTTON_LEFT:
+			var pi := get_pause_index_at(event.position)
+			if pi >= 0:
+				select_pause_menu(pi)
+				get_viewport().set_input_as_handled()
+		elif event is InputEventMouseMotion:
+			queue_redraw()
+		return
+
 	# 鼠标点击选择（功法或仙道）
 	if event is InputEventMouseButton and event.pressed and event.button_index == MOUSE_BUTTON_LEFT:
 		if upgrade_pending:
@@ -1883,7 +1923,41 @@ func _input(event: InputEvent) -> void:
 
 
 func _unhandled_input(event: InputEvent) -> void:
+	# 主菜单（v0.17.0）
+	if in_main_menu:
+		if event is InputEventKey and event.pressed and not event.echo:
+			match event.keycode:
+				KEY_UP, KEY_W:
+					menu_selection = (menu_selection + 2) % 3
+				KEY_DOWN, KEY_S:
+					menu_selection = (menu_selection + 1) % 3
+				KEY_ENTER, KEY_KP_ENTER, KEY_SPACE:
+					select_main_menu(menu_selection)
+				KEY_ESCAPE:
+					get_tree().quit()
+		return
+
+	# 暂停菜单（v0.17.0）
+	if is_paused:
+		if event is InputEventKey and event.pressed and not event.echo:
+			match event.keycode:
+				KEY_UP, KEY_W:
+					pause_selection = (pause_selection + 1) % 2
+				KEY_DOWN, KEY_S:
+					pause_selection = (pause_selection + 1) % 2
+				KEY_ENTER, KEY_KP_ENTER:
+					select_pause_menu(pause_selection)
+				KEY_ESCAPE:
+					is_paused = false
+		return
+
 	if event is InputEventKey and event.pressed and not event.echo:
+		# ESC 暂停
+		if event.keycode == KEY_ESCAPE:
+			if not is_game_over:
+				is_paused = true
+				pause_selection = 0
+			return
 		# 符箓与飞剑（游戏中随时可用）
 		if not is_game_over and not upgrade_pending and not path_choice_pending \
 				and not tribulation_reward_pending and not artifact_drop_pending:
@@ -1943,6 +2017,192 @@ func _unhandled_input(event: InputEvent) -> void:
 					choose_artifact(2)
 
 
+# ==========================================
+# 主菜单与暂停（v0.17.0）
+# ==========================================
+
+# 主菜单选项：0 开始游戏 / 1 继续上次 / 2 退出
+func select_main_menu(index: int) -> void:
+	match index:
+		0:
+			in_main_menu = false
+			is_paused = false
+			restart_game()
+		1:
+			# 暂无存档系统，先按新开处理
+			in_main_menu = false
+			is_paused = false
+			restart_game()
+		2:
+			get_tree().quit()
+
+
+func select_pause_menu(index: int) -> void:
+	match index:
+		0:
+			is_paused = false
+		1:
+			is_paused = false
+			in_main_menu = true
+
+
+# 主菜单选项矩形
+func get_menu_item_rect(index: int) -> Rect2:
+	var w := 320.0 * ui_scale
+	var h := 52.0 * ui_scale
+	var gap := 12.0 * ui_scale
+	var start_y := screen_size.y / 2.0 - 20.0 * ui_scale
+	return Rect2(
+		Vector2(screen_size.x / 2.0 - w / 2.0, start_y + float(index) * (h + gap)),
+		Vector2(w, h)
+	)
+
+
+func get_menu_index_at(pos: Vector2) -> int:
+	for i in range(3):
+		if get_menu_item_rect(i).has_point(pos):
+			return i
+	return -1
+
+
+# 暂停选项矩形
+func get_pause_item_rect(index: int) -> Rect2:
+	var w := 300.0 * ui_scale
+	var h := 50.0 * ui_scale
+	var gap := 12.0 * ui_scale
+	var start_y := screen_size.y / 2.0 - 30.0 * ui_scale
+	return Rect2(
+		Vector2(screen_size.x / 2.0 - w / 2.0, start_y + float(index) * (h + gap)),
+		Vector2(w, h)
+	)
+
+
+func get_pause_index_at(pos: Vector2) -> int:
+	for i in range(2):
+		if get_pause_item_rect(i).has_point(pos):
+			return i
+	return -1
+
+
+# 画主菜单
+func draw_main_menu() -> void:
+	draw_rect(Rect2(Vector2.ZERO, screen_size), Color("#0d1512"))
+
+	# 标题
+	draw_string(
+		ThemeDB.fallback_font,
+		Vector2(0, screen_size.y / 2.0 - 150.0 * ui_scale),
+		"一 念 成 仙",
+		HORIZONTAL_ALIGNMENT_CENTER,
+		screen_size.x,
+		56,
+		Color("#ffd76e")
+	)
+
+	draw_string(
+		ThemeDB.fallback_font,
+		Vector2(0, screen_size.y / 2.0 - 100.0 * ui_scale),
+		"修仙肉鸽 · 无限世界",
+		HORIZONTAL_ALIGNMENT_CENTER,
+		screen_size.x,
+		18,
+		Color("#7fbfa0")
+	)
+
+	var labels := ["开始游戏", "继续游戏", "退出"]
+	var hovered := get_hovered_menu_index()
+
+	for i in range(3):
+		var rect := get_menu_item_rect(i)
+		var is_hover := (i == hovered) or (i == menu_selection and hovered < 0)
+
+		if is_hover:
+			draw_rect(rect, Color("#1e3a2e"))
+			draw_rect(rect, Color("#ffd76e"), false, 2.0)
+		else:
+			draw_rect(rect, Color("#16261f"))
+			draw_rect(rect, Color("#3f6b55"), false, 1.0)
+
+		draw_string(
+			ThemeDB.fallback_font,
+			Vector2(rect.position.x, rect.position.y + rect.size.y / 2.0 + 8.0),
+			labels[i],
+			HORIZONTAL_ALIGNMENT_CENTER,
+			rect.size.x,
+			22,
+			Color("#ffd76e") if is_hover else Color("#c8e8d8")
+		)
+
+	draw_string(
+		ThemeDB.fallback_font,
+		Vector2(0, screen_size.y - 60.0),
+		"↑↓ 选择    Enter 确认    游戏中按 ESC 暂停",
+		HORIZONTAL_ALIGNMENT_CENTER,
+		screen_size.x,
+		15,
+		Color("#5f8f75")
+	)
+
+
+# 画暂停菜单
+func draw_pause_menu() -> void:
+	draw_rect(Rect2(Vector2.ZERO, screen_size), Color(0, 0, 0, 0.75))
+
+	draw_string(
+		ThemeDB.fallback_font,
+		Vector2(0, screen_size.y / 2.0 - 90.0 * ui_scale),
+		"暂 停",
+		HORIZONTAL_ALIGNMENT_CENTER,
+		screen_size.x,
+		40,
+		Color("#ffd76e")
+	)
+
+	var labels := ["继续游戏", "返回主菜单"]
+	var hovered := get_hovered_pause_index()
+
+	for i in range(2):
+		var rect := get_pause_item_rect(i)
+		var is_hover := (i == hovered) or (i == pause_selection and hovered < 0)
+
+		if is_hover:
+			draw_rect(rect, Color("#1e3a2e"))
+			draw_rect(rect, Color("#ffd76e"), false, 2.0)
+		else:
+			draw_rect(rect, Color("#16261f"))
+			draw_rect(rect, Color("#3f6b55"), false, 1.0)
+
+		draw_string(
+			ThemeDB.fallback_font,
+			Vector2(rect.position.x, rect.position.y + rect.size.y / 2.0 + 8.0),
+			labels[i],
+			HORIZONTAL_ALIGNMENT_CENTER,
+			rect.size.x,
+			21,
+			Color("#ffd76e") if is_hover else Color("#c8e8d8")
+		)
+
+	draw_string(
+		ThemeDB.fallback_font,
+		Vector2(0, screen_size.y - 60.0),
+		"ESC 继续",
+		HORIZONTAL_ALIGNMENT_CENTER,
+		screen_size.x,
+		15,
+		Color("#5f8f75")
+	)
+
+
+func get_hovered_menu_index() -> int:
+	var mouse := get_viewport().get_mouse_position()
+	return get_menu_index_at(mouse)
+
+
+func get_hovered_pause_index() -> int:
+	var mouse := get_viewport().get_mouse_position()
+	return get_pause_index_at(mouse)
+
+
 func restart_game() -> void:
 	player_max_hp = 100
 	player_hp = player_max_hp
@@ -1950,6 +2210,7 @@ func restart_game() -> void:
 	update_camera()
 	damage_cooldown = 0.0
 	is_game_over = false
+	is_paused = false
 
 	kill_count = 0
 	cultivation = 0
@@ -2173,6 +2434,11 @@ func draw_bottom_hud() -> void:
 
 
 func _draw() -> void:
+	# 主菜单独占画面（v0.17.0）
+	if in_main_menu:
+		draw_main_menu()
+		return
+
 	# 场景主题背景（v0.16.0：随境界切换）
 	var scene_data: Dictionary = SCENES.get(current_scene, SCENES["山门初境"])
 	var bg_color := Color(str(scene_data["bg"]))
@@ -2778,6 +3044,10 @@ func _draw() -> void:
 	# 底部 HUD（网游式）
 	# ==========================================
 	draw_bottom_hud()
+
+	# 暂停菜单（v0.17.0）
+	if is_paused:
+		draw_pause_menu()
 
 	# 结算界面（胜利 / 失败）
 	if is_game_over:
