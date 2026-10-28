@@ -25,7 +25,7 @@ const ENEMY_TYPES := {
 		"speed": 75.0,
 		"max_hp": 100,
 		"damage": 10,
-		"reward": 10,
+		"reward": 35,
 	},
 	"bird": {
 		"name": "疾风雀",
@@ -34,7 +34,7 @@ const ENEMY_TYPES := {
 		"speed": 145.0,
 		"max_hp": 55,
 		"damage": 6,
-		"reward": 8,
+		"reward": 28,
 	},
 	"golem": {
 		"name": "岩甲兽",
@@ -43,7 +43,7 @@ const ENEMY_TYPES := {
 		"speed": 45.0,
 		"max_hp": 180,
 		"damage": 16,
-		"reward": 25,
+		"reward": 90,
 	},
 	"boss": {
 		"name": "魔道老祖",
@@ -52,8 +52,26 @@ const ENEMY_TYPES := {
 		"speed": 30.0,
 		"max_hp": 3000,
 		"damage": 30,
-		"reward": 200,
+		"reward": 1500,
 	},
+}
+
+# ==========================================
+# 属性法术（v0.9.0）：给剑气附加元素
+# ==========================================
+const ELEMENTS := {
+	"none":    {"name": "",       "color": "#42f5ff"},
+	"fire":    {"name": "烈焰",   "color": "#ff6b35"},
+	"ice":     {"name": "寒冰",   "color": "#6bc8ff"},
+	"thunder": {"name": "雷霆",   "color": "#c77dff"},
+	"wind":    {"name": "罡风",   "color": "#9dffb0"},
+}
+
+const ELEMENT_SKILLS := {
+	"烈焰剑气": {"element": "fire",    "desc": "剑气附带灼烧：每秒 -8 血，持续 3 秒"},
+	"寒冰剑气": {"element": "ice",     "desc": "剑气附带减速 35%，持续 2 秒"},
+	"雷霆剑气": {"element": "thunder", "desc": "20% 概率连锁到 200px 内另一只"},
+	"罡风剑气": {"element": "wind",    "desc": "击退 60px，且剑气 +1 道"},
 }
 
 # ==========================================
@@ -94,53 +112,53 @@ const ELITE_REWARD_MUL := 2
 const REALMS := [
 	{
 		"name": "炼己",
-		"xp": [30, 40, 50],
-		"skills": ["剑气诀", "护体灵气", "疾风步", "凝神"],
+		"xp": [60, 80, 100],
+		"skills": ["剑气诀", "护体灵气", "疾风步", "凝神", "吐纳诀", "养气术", "快剑式", "远击诀"],
 	},
 	{
 		"name": "筑基",
-		"xp": [60, 70, 80],
-		"skills": ["御剑术", "金钟罩", "踏云步", "心眼"],
+		"xp": [120, 140, 160],
+		"skills": ["御剑术", "金钟罩", "踏云步", "心眼", "周天功", "固元术", "流云剑", "穿云式"],
 	},
 	{
 		"name": "炼精",
-		"xp": [90, 100, 115],
-		"skills": ["精元剑气", "精血护体", "精行步", "精觉"],
+		"xp": [162, 180, 207],
+		"skills": ["精元剑气", "精血护体", "精行步", "精觉", "精元回春", "精血凝体", "精微剑", "精远击"],
 	},
 	{
 		"name": "化炁",
-		"xp": [125, 140, 150],
-		"skills": ["炁冲剑脉", "炁盾", "罡气行云", "炁感"],
+		"xp": [225, 252, 270],
+		"skills": ["炁冲剑脉", "炁盾", "罡气行云", "炁感", "炁养周天", "炁凝真身", "炁疾剑", "炁破长空", "烈焰剑气"],
 	},
 	{
 		"name": "炼炁",
-		"xp": [160, 175, 190],
-		"skills": ["炁御剑", "炁墙", "缩地成寸", "炁视"],
+		"xp": [272, 298, 323],
+		"skills": ["炁御剑", "炁墙", "缩地成寸", "炁视", "炼炁化生", "炼炁铸体", "炼炁快剑", "炼炁远击", "寒冰剑气"],
 	},
 	{
 		"name": "化神",
-		"xp": [205, 220, 235],
-		"skills": ["神识御剑", "神念护体", "神行术", "神觉"],
+		"xp": [349, 374, 400],
+		"skills": ["神识御剑", "神念护体", "神行术", "神觉", "神元回春", "神元凝体", "神速剑", "神识远照", "雷霆剑气"],
 	},
 	{
 		"name": "炼神",
-		"xp": [255, 275, 295],
-		"skills": ["炼神剑意", "神元护体", "踏虚而行", "洞神"],
+		"xp": [408, 440, 472],
+		"skills": ["炼神剑意", "神元护体", "踏虚而行", "洞神", "炼神养元", "炼神固本", "炼神快剑", "炼神远击", "罡风剑气"],
 	},
 	{
 		"name": "返虚",
-		"xp": [315, 335, 360],
-		"skills": ["虚空剑意", "返虚护体", "返虚游", "洞虚"],
+		"xp": [504, 536, 576],
+		"skills": ["虚空剑意", "返虚护体", "返虚游", "洞虚", "返虚化生", "返虚凝体", "返虚快剑", "返虚远游", "烈焰剑气"],
 	},
 	{
 		"name": "炼虚",
-		"xp": [385, 410, 435],
-		"skills": ["虚剑破空", "虚元金身", "逍遥游", "虚瞳"],
+		"xp": [578, 615, 653],
+		"skills": ["虚剑破空", "虚元金身", "逍遥游", "虚瞳", "炼虚长生", "炼虚铸体", "炼虚快剑", "炼虚远击", "寒冰剑气"],
 	},
 	{
 		"name": "合道",
-		"xp": [460, 490, 525],
-		"skills": ["大道剑诀", "合道金身", "天地同游", "天眼"],
+		"xp": [690, 735, 788],
+		"skills": ["大道剑诀", "合道金身", "天地同游", "天眼", "合道长生", "合道真身", "合道快剑", "合道无疆", "雷霆剑气"],
 	},
 ]
 
@@ -156,51 +174,91 @@ const SKILLS := {
 	"护体灵气":   {"desc": "减伤 +4",        "stat": "armor", "value": 4},
 	"疾风步":     {"desc": "移速 +25",       "stat": "speed", "value": 25},
 	"凝神":       {"desc": "暴击率 +5%",     "stat": "crit",  "value": 5},
+	"吐纳诀":     {"desc": "生命回复 +0.5/秒", "stat": "regen", "value": 0.5},
+	"养气术":     {"desc": "生命上限 +20",   "stat": "max_hp", "value": 20},
+	"快剑式":     {"desc": "攻击间隔 -0.04 秒", "stat": "attack_speed", "value": 0.04},
+	"远击诀":     {"desc": "剑气射程 +40",   "stat": "range", "value": 40},
 	# ---- 筑基 ----
 	"御剑术":     {"desc": "剑气伤害 +18",   "stat": "sword", "value": 18},
 	"金钟罩":     {"desc": "减伤 +10",       "stat": "armor", "value": 10},
 	"踏云步":     {"desc": "移速 +45",       "stat": "speed", "value": 45},
 	"心眼":       {"desc": "暴击率 +10%",    "stat": "crit",  "value": 10},
+	"周天功":     {"desc": "生命回复 +1.0/秒", "stat": "regen", "value": 1.0},
+	"固元术":     {"desc": "生命上限 +40",   "stat": "max_hp", "value": 40},
+	"流云剑":     {"desc": "攻击间隔 -0.05 秒", "stat": "attack_speed", "value": 0.05},
+	"穿云式":     {"desc": "剑气射程 +70",   "stat": "range", "value": 70},
 	# ---- 炼精 ----
 	"精元剑气":   {"desc": "剑气伤害 +26",   "stat": "sword", "value": 26},
 	"精血护体":   {"desc": "减伤 +13",       "stat": "armor", "value": 13},
 	"精行步":     {"desc": "移速 +60",       "stat": "speed", "value": 60},
 	"精觉":       {"desc": "暴击率 +13%",    "stat": "crit",  "value": 13},
+	"精元回春":   {"desc": "生命回复 +1.5/秒", "stat": "regen", "value": 1.5},
+	"精血凝体":   {"desc": "生命上限 +60",   "stat": "max_hp", "value": 60},
+	"精微剑":     {"desc": "攻击间隔 -0.06 秒", "stat": "attack_speed", "value": 0.06},
+	"精远击":     {"desc": "剑气射程 +100",  "stat": "range", "value": 100},
 	# ---- 化炁 ----
 	"炁冲剑脉":   {"desc": "剑气伤害 +36",   "stat": "sword", "value": 36},
 	"炁盾":       {"desc": "减伤 +18",       "stat": "armor", "value": 18},
 	"罡气行云":   {"desc": "移速 +80",       "stat": "speed", "value": 80},
 	"炁感":       {"desc": "暴击率 +17%",    "stat": "crit",  "value": 17},
+	"炁养周天":   {"desc": "生命回复 +2.0/秒", "stat": "regen", "value": 2.0},
+	"炁凝真身":   {"desc": "生命上限 +85",   "stat": "max_hp", "value": 85},
+	"炁疾剑":     {"desc": "攻击间隔 -0.07 秒", "stat": "attack_speed", "value": 0.07},
+	"炁破长空":   {"desc": "剑气射程 +140",  "stat": "range", "value": 140},
 	# ---- 炼炁 ----
 	"炁御剑":     {"desc": "剑气伤害 +48",   "stat": "sword", "value": 48},
 	"炁墙":       {"desc": "减伤 +24",       "stat": "armor", "value": 24},
 	"缩地成寸":   {"desc": "移速 +105",      "stat": "speed", "value": 105},
 	"炁视":       {"desc": "暴击率 +22%",    "stat": "crit",  "value": 22},
+	"炼炁化生":   {"desc": "生命回复 +2.5/秒", "stat": "regen", "value": 2.5},
+	"炼炁铸体":   {"desc": "生命上限 +115",  "stat": "max_hp", "value": 115},
+	"炼炁快剑":   {"desc": "攻击间隔 -0.08 秒", "stat": "attack_speed", "value": 0.08},
+	"炼炁远击":   {"desc": "剑气射程 +190",  "stat": "range", "value": 190},
 	# ---- 化神 ----
 	"神识御剑":   {"desc": "剑气伤害 +62",   "stat": "sword", "value": 62},
 	"神念护体":   {"desc": "减伤 +30",       "stat": "armor", "value": 30},
 	"神行术":     {"desc": "移速 +130",      "stat": "speed", "value": 130},
 	"神觉":       {"desc": "暴击率 +27%",    "stat": "crit",  "value": 27},
+	"神元回春":   {"desc": "生命回复 +3.0/秒", "stat": "regen", "value": 3.0},
+	"神元凝体":   {"desc": "生命上限 +150",  "stat": "max_hp", "value": 150},
+	"神速剑":     {"desc": "攻击间隔 -0.09 秒", "stat": "attack_speed", "value": 0.09},
+	"神识远照":   {"desc": "剑气射程 +250",  "stat": "range", "value": 250},
 	# ---- 炼神 ----
 	"炼神剑意":   {"desc": "剑气伤害 +80",   "stat": "sword", "value": 80},
 	"神元护体":   {"desc": "减伤 +38",       "stat": "armor", "value": 38},
 	"踏虚而行":   {"desc": "移速 +160",      "stat": "speed", "value": 160},
 	"洞神":       {"desc": "暴击率 +33%",    "stat": "crit",  "value": 33},
+	"炼神养元":   {"desc": "生命回复 +3.5/秒", "stat": "regen", "value": 3.5},
+	"炼神固本":   {"desc": "生命上限 +190",  "stat": "max_hp", "value": 190},
+	"炼神快剑":   {"desc": "攻击间隔 -0.10 秒", "stat": "attack_speed", "value": 0.10},
+	"炼神远击":   {"desc": "剑气射程 +320",  "stat": "range", "value": 320},
 	# ---- 返虚 ----
 	"虚空剑意":   {"desc": "剑气伤害 +100",  "stat": "sword", "value": 100},
 	"返虚护体":   {"desc": "减伤 +46",       "stat": "armor", "value": 46},
 	"返虚游":     {"desc": "移速 +195",      "stat": "speed", "value": 195},
 	"洞虚":       {"desc": "暴击率 +39%",    "stat": "crit",  "value": 39},
+	"返虚化生":   {"desc": "生命回复 +4.0/秒", "stat": "regen", "value": 4.0},
+	"返虚凝体":   {"desc": "生命上限 +240",  "stat": "max_hp", "value": 240},
+	"返虚快剑":   {"desc": "攻击间隔 -0.11 秒", "stat": "attack_speed", "value": 0.11},
+	"返虚远游":   {"desc": "剑气射程 +400",  "stat": "range", "value": 400},
 	# ---- 炼虚 ----
 	"虚剑破空":   {"desc": "剑气伤害 +125",  "stat": "sword", "value": 125},
 	"虚元金身":   {"desc": "减伤 +56",       "stat": "armor", "value": 56},
 	"逍遥游":     {"desc": "移速 +235",      "stat": "speed", "value": 235},
 	"虚瞳":       {"desc": "暴击率 +46%",    "stat": "crit",  "value": 46},
+	"炼虚长生":   {"desc": "生命回复 +4.5/秒", "stat": "regen", "value": 4.5},
+	"炼虚铸体":   {"desc": "生命上限 +300",  "stat": "max_hp", "value": 300},
+	"炼虚快剑":   {"desc": "攻击间隔 -0.12 秒", "stat": "attack_speed", "value": 0.12},
+	"炼虚远击":   {"desc": "剑气射程 +500",  "stat": "range", "value": 500},
 	# ---- 合道 ----
 	"大道剑诀":   {"desc": "剑气伤害 +155",  "stat": "sword", "value": 155},
 	"合道金身":   {"desc": "减伤 +68",       "stat": "armor", "value": 68},
-	"逍遥天地":   {"desc": "移速 +280",      "stat": "speed", "value": 280},
+	"天地同游":   {"desc": "移速 +280",      "stat": "speed", "value": 280},
 	"天眼":       {"desc": "暴击率 +54%",    "stat": "crit",  "value": 54},
+	"合道长生":   {"desc": "生命回复 +5.0/秒", "stat": "regen", "value": 5.0},
+	"合道真身":   {"desc": "生命上限 +380",  "stat": "max_hp", "value": 380},
+	"合道快剑":   {"desc": "攻击间隔 -0.13 秒", "stat": "attack_speed", "value": 0.13},
+	"合道无疆":   {"desc": "剑气射程 +620",  "stat": "range", "value": 620},
 	# ---- 神仙 ----
 	"阳神御剑":   {"desc": "剑气 +200，暴击 +20%", "stat": "multi", "effects": [
 		{"stat": "sword", "value": 200}, {"stat": "crit", "value": 20}]},
@@ -213,8 +271,13 @@ const SKILLS := {
 		{"stat": "sword", "value": 300}, {"stat": "crit", "value": 30}]},
 	"太虚不灭":   {"desc": "最大生命 +200 并回满，减伤 +120", "stat": "multi", "effects": [
 		{"stat": "max_hp", "value": 200}, {"stat": "armor", "value": 120}]},
-	"天地同游":   {"desc": "移速 +450，攻击间隔 -0.15 秒", "stat": "multi", "effects": [
+	"逍遥无极":   {"desc": "移速 +450，攻击间隔 -0.15 秒", "stat": "multi", "effects": [
 		{"stat": "speed", "value": 450}, {"stat": "attack_speed", "value": 0.15}]},
+	# ---- 属性法术（化炁起出现） ----
+	"烈焰剑气":   {"desc": "剑气附带灼烧：每秒 -8 血，3 秒", "stat": "element", "value": 0, "element": "fire"},
+	"寒冰剑气":   {"desc": "剑气附带减速 35%，2 秒", "stat": "element", "value": 0, "element": "ice"},
+	"雷霆剑气":   {"desc": "20% 概率连锁 200px 内另一只", "stat": "element", "value": 0, "element": "thunder"},
+	"罡风剑气":   {"desc": "击退 60px，剑气 +1 道", "stat": "element", "value": 0, "element": "wind"},
 }
 
 # ==========================================
@@ -239,12 +302,12 @@ const IMMORTAL_PATHS := {
 }
 
 # 仙阶修为需求：[仙道→神仙, 神仙→天仙]
-const IMMORTAL_XP := [310, 380]
+const IMMORTAL_XP := [700, 900]
 
 # 各仙阶可选的功法
 const IMMORTAL_SKILLS := {
 	"神仙": ["阳神御剑", "不坏仙躯", "咫尺天涯"],
-	"天仙": ["万剑朝宗", "太虚不灭", "天地同游"],
+	"天仙": ["万剑朝宗", "太虚不灭", "逍遥无极"],
 }
 
 # 妖兽数组（阶段 9：同屏多只）
@@ -281,6 +344,7 @@ var projectile_directions: Array[Vector2] = []
 var projectile_damages: Array[int] = []
 var projectile_lifetimes: Array[float] = []
 var projectile_is_critical: Array[bool] = []
+var projectile_elements: Array[String] = []
 
 # 修为与境界
 var kill_count: int = 0
@@ -300,6 +364,12 @@ var sword_bonus: int = 0
 var armor_reduction: int = 0
 var speed_bonus: float = 0.0
 var crit_bonus: float = 0.0     # 暴击率加成（百分点，如 5 表示 +5%）
+var hp_regen: float = 0.0       # 每秒生命回复
+
+# 属性法术（v0.9.0）
+var sword_element: String = "none"   # 当前剑气元素
+var extra_shots: int = 0             # 额外剑气道数
+var pierce: bool = false             # 剑气穿透
 
 # 三选一功法
 var skill_choices: Array[Dictionary] = []
@@ -348,6 +418,11 @@ func _process(delta: float) -> void:
 	run_time += delta
 
 	damage_cooldown = maxf(0.0, damage_cooldown - delta)
+
+	# 生命回复
+	if hp_regen > 0.0 and player_hp < player_max_hp:
+		player_hp = mini(player_max_hp, player_hp + int(ceil(hp_regen * delta)))
+
 	for e in enemies:
 		e["hit_flash"] = maxf(0.0, float(e["hit_flash"]) - delta)
 	attack_cooldown = maxf(0.0, attack_cooldown - delta)
@@ -394,12 +469,36 @@ func update_player(delta: float) -> void:
 # ==========================================
 
 func update_enemies(delta: float) -> void:
-	for e in enemies:
+	for i in range(enemies.size() - 1, -1, -1):
+		if i >= enemies.size():
+			continue
+		var e: Dictionary = enemies[i]
+
+		# 灼烧结算
+		if e.has("burn") and float(e.get("burn_timer", 0.0)) > 0.0:
+			e["burn_timer"] = float(e["burn_timer"]) - delta
+			e["hp"] = int(e["hp"]) - int(e.get("burn", 0))
+			if int(e["hp"]) <= 0:
+				kill_enemy(i)
+				continue
+			if float(e["burn_timer"]) <= 0.0:
+				e.erase("burn")
+				e.erase("burn_timer")
+
+		# 减速结算
+		var speed_mul := 1.0
+		if e.has("slow") and float(e.get("slow_timer", 0.0)) > 0.0:
+			speed_mul = float(e["slow"])
+			e["slow_timer"] = float(e["slow_timer"]) - delta
+			if float(e["slow_timer"]) <= 0.0:
+				e.erase("slow")
+				e.erase("slow_timer")
+
 		var direction: Vector2 = player_pos - e["pos"]
 		var distance := direction.length()
 
 		if distance > 0.001:
-			e["pos"] = e["pos"] + direction.normalized() * float(e["speed"]) * delta
+			e["pos"] = e["pos"] + direction.normalized() * float(e["speed"]) * speed_mul * delta
 
 		var contact_distance := (player_size + float(e["size"])) / 2.0
 
@@ -448,17 +547,28 @@ func update_auto_attack() -> void:
 
 
 func fire_sword_energy(direction: Vector2) -> void:
-	var damage: int = attack_damage + sword_bonus
-	var is_critical: bool = randf() < (0.15 + crit_bonus / 100.0)
+	var shots: int = 1 + extra_shots
 
-	if is_critical:
-		damage *= 2
+	for i in range(shots):
+		var d := direction
 
-	projectile_positions.append(player_pos + direction * 18.0)
-	projectile_directions.append(direction)
-	projectile_damages.append(damage)
-	projectile_lifetimes.append(projectile_lifetime)
-	projectile_is_critical.append(is_critical)
+		# 多重剑气：扇形散开
+		if shots > 1:
+			var spread := 0.18 * float(i - (shots - 1) / 2.0)
+			d = direction.rotated(spread)
+
+		var damage: int = attack_damage + sword_bonus
+		var is_critical: bool = randf() < (0.15 + crit_bonus / 100.0)
+
+		if is_critical:
+			damage *= 2
+
+		projectile_positions.append(player_pos + d * 18.0)
+		projectile_directions.append(d)
+		projectile_damages.append(damage)
+		projectile_lifetimes.append(projectile_lifetime)
+		projectile_is_critical.append(is_critical)
+		projectile_elements.append(sword_element)
 
 # ==========================================
 # 剑气飞行、命中与消失
@@ -483,28 +593,30 @@ func update_projectiles(delta: float) -> void:
 				hit_index = j
 
 		if hit_index >= 0:
-			var e: Dictionary = enemies[hit_index]
+			var element: String = projectile_elements[i] if i < projectile_elements.size() else "none"
 			var damage: int = projectile_damages[i]
 			var is_critical: bool = projectile_is_critical[i]
 
-			e["hp"] = int(e["hp"]) - damage
-			e["hit_flash"] = 0.12
+			apply_hit(hit_index, damage, is_critical, element)
 
-			if is_critical:
-				message_text = "暴击！伤害 -" + str(damage)
+			# 穿透：不消耗剑气
+			if not pierce:
+				projectile_positions.remove_at(i)
+				projectile_directions.remove_at(i)
+				projectile_damages.remove_at(i)
+				projectile_lifetimes.remove_at(i)
+				projectile_is_critical.remove_at(i)
+				if i < projectile_elements.size():
+					projectile_elements.remove_at(i)
 			else:
-				message_text = "剑气命中 -" + str(damage)
-
-			message_timer = 0.6
-
-			projectile_positions.remove_at(i)
-			projectile_directions.remove_at(i)
-			projectile_damages.remove_at(i)
-			projectile_lifetimes.remove_at(i)
-			projectile_is_critical.remove_at(i)
-
-			if int(e["hp"]) <= 0:
-				kill_enemy(hit_index)
+				# 穿透时同一只不重复命中，简单处理为剑气消失
+				projectile_positions.remove_at(i)
+				projectile_directions.remove_at(i)
+				projectile_damages.remove_at(i)
+				projectile_lifetimes.remove_at(i)
+				projectile_is_critical.remove_at(i)
+				if i < projectile_elements.size():
+					projectile_elements.remove_at(i)
 
 			continue
 
@@ -521,6 +633,70 @@ func update_projectiles(delta: float) -> void:
 			projectile_directions.remove_at(i)
 			projectile_damages.remove_at(i)
 			projectile_lifetimes.remove_at(i)
+			if i < projectile_elements.size():
+				projectile_elements.remove_at(i)
+
+
+# 对某只妖兽造成伤害并施加元素效果
+func apply_hit(index: int, damage: int, is_critical: bool, element: String) -> void:
+	if index < 0 or index >= enemies.size():
+		return
+
+	var e: Dictionary = enemies[index]
+	e["hp"] = int(e["hp"]) - damage
+	e["hit_flash"] = 0.12
+
+	# 元素效果
+	match element:
+		"fire":
+			e["burn"] = 8
+			e["burn_timer"] = 3.0
+		"ice":
+			e["slow"] = 0.65
+			e["slow_timer"] = 2.0
+		"wind":
+			var dir: Vector2 = (e["pos"] as Vector2) - player_pos
+			if dir.length() > 0.001:
+				e["pos"] = (e["pos"] as Vector2) + dir.normalized() * 60.0
+		"thunder":
+			if randf() < 0.20:
+				chain_thunder(index, damage)
+
+	if is_critical:
+		message_text = "暴击！伤害 -" + str(damage)
+	else:
+		message_text = "剑气命中 -" + str(damage)
+
+	message_timer = 0.6
+
+	if int(e["hp"]) <= 0:
+		kill_enemy(index)
+
+
+# 雷霆连锁：对 200px 内另一只造成一半伤害
+func chain_thunder(origin_index: int, damage: int) -> void:
+	var origin: Dictionary = enemies[origin_index]
+	var target_index := -1
+	var best := 200.0
+
+	for j in range(enemies.size()):
+		if j == origin_index:
+			continue
+		var d: float = (enemies[j]["pos"] as Vector2).distance_to(origin["pos"])
+		if d < best:
+			best = d
+			target_index = j
+
+	if target_index < 0:
+		return
+
+	var t: Dictionary = enemies[target_index]
+	var chain_dmg: int = maxi(1, damage / 2)
+	t["hp"] = int(t["hp"]) - chain_dmg
+	t["hit_flash"] = 0.12
+
+	if int(t["hp"]) <= 0:
+		kill_enemy(target_index)
 
 
 # ==========================================
@@ -882,13 +1058,22 @@ func begin_upgrade() -> void:
 # 应用一个功法的效果（支持单效果与 multi 多效果）
 func apply_skill_effect(skill_name: String) -> void:
 	var data: Dictionary = SKILLS[skill_name]
+	var stat: String = str(data["stat"])
 
-	if str(data["stat"]) == "multi":
+	if stat == "multi":
 		for eff in data["effects"]:
 			apply_stat(str(eff["stat"]), float(eff["value"]))
 		return
 
-	apply_stat(str(data["stat"]), float(data["value"]))
+	# 属性法术：切换剑气元素
+	if stat == "element":
+		sword_element = str(data["element"])
+		# 罡风剑气额外 +1 道
+		if str(data["element"]) == "wind":
+			extra_shots += 1
+		return
+
+	apply_stat(stat, float(data["value"]))
 
 
 # 单项属性加成
@@ -909,6 +1094,14 @@ func apply_stat(stat: String, value: float) -> void:
 				player_hp = player_max_hp   # 提升上限时回满
 		"attack_speed":
 			attack_interval = maxf(0.1, attack_interval - value)
+		"range":
+			attack_range += value
+		"regen":
+			hp_regen += value
+		"element":
+			sword_element = str(value)   # value 由调用方传元素名
+		"extra_shot":
+			extra_shots += int(value)
 
 
 func choose_skill(index: int) -> void:
@@ -1291,6 +1484,8 @@ func restart_game() -> void:
 	path_choices.clear()
 
 	attack_interval = 0.55
+	attack_range = 420.0
+	hp_regen = 0.0
 
 	sword_bonus = 0
 	armor_reduction = 0
