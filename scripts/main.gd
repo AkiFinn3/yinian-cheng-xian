@@ -67,6 +67,26 @@ const ELEMENTS := {
 	"wind":    {"name": "罡风",   "color": "#9dffb0"},
 }
 
+# ==========================================
+# 法器（v0.11.0）：被动装备，3 槽，同类型不可重复
+# ==========================================
+const ARTIFACTS := {
+	"青锋剑匣": {"rarity": "凡", "desc": "剑气伤害 +15",        "stat": "sword",       "value": 15},
+	"玄龟甲":   {"rarity": "凡", "desc": "减伤 8%",             "stat": "armor",       "value": 8},
+	"疾风铃":   {"rarity": "凡", "desc": "移速 +40",            "stat": "speed",       "value": 40},
+	"聚灵珠":   {"rarity": "凡", "desc": "修为获取 +15%",       "stat": "xp_bonus",    "value": 15},
+	"雷纹印":   {"rarity": "灵", "desc": "暴击率 +8%",          "stat": "crit",        "value": 8},
+	"回春玉":   {"rarity": "灵", "desc": "每秒回复 1.5 生命",    "stat": "regen",       "value": 1.5},
+	"破军令":   {"rarity": "灵", "desc": "剑气射程 +80",        "stat": "range",       "value": 80},
+	"千机匣":   {"rarity": "灵", "desc": "攻击间隔 -0.06 秒",    "stat": "attack_speed","value": 0.06},
+	"太虚镜":   {"rarity": "宝", "desc": "剑气 +1 道（散射）",   "stat": "extra_shot",  "value": 1},
+	"不灭灯":   {"rarity": "宝", "desc": "生命低于 30% 时减伤 +30%", "stat": "low_hp_armor", "value": 30},
+	"噬魂幡":   {"rarity": "宝", "desc": "击杀回复 3 生命",       "stat": "kill_heal",   "value": 3},
+	"天罡印":   {"rarity": "宝", "desc": "暴击伤害 ×2.5（原 ×2）", "stat": "crit_dmg",   "value": 0.5},
+}
+
+const MAX_ARTIFACTS := 3
+
 const ELEMENT_SKILLS := {
 	"烈焰剑气": {"element": "fire",    "desc": "剑气附带灼烧：每秒 -8 血，持续 3 秒"},
 	"寒冰剑气": {"element": "ice",     "desc": "剑气附带减速 35%，持续 2 秒"},
@@ -366,6 +386,15 @@ var speed_bonus: float = 0.0
 var crit_bonus: float = 0.0     # 暴击率加成（百分点，如 5 表示 +5%）
 var hp_regen: float = 0.0       # 每秒生命回复
 
+# 法器（v0.11.0）
+var artifacts: Array[String] = []           # 已装备法器名
+var artifact_drop_pending: bool = false
+var artifact_choices: Array[Dictionary] = []
+var xp_bonus: float = 0.0                   # 修为获取加成（百分比）
+var kill_heal: int = 0                      # 击杀回血
+var low_hp_armor: float = 0.0               # 低血减伤（额外）
+var crit_dmg_bonus: float = 0.0             # 暴击伤害加成
+
 # 属性法术（v0.9.0）
 var sword_element: String = "none"   # 当前剑气元素
 var extra_shots: int = 0             # 额外剑气道数
@@ -411,7 +440,7 @@ func _process(delta: float) -> void:
 		queue_redraw()
 		return
 
-	if upgrade_pending or path_choice_pending or tribulation_reward_pending:
+	if upgrade_pending or path_choice_pending or tribulation_reward_pending or artifact_drop_pending:
 		queue_redraw()
 		return
 
@@ -505,6 +534,10 @@ func update_enemies(delta: float) -> void:
 		if distance < contact_distance and damage_cooldown <= 0.0:
 			var enemy_damage: int = int(e.get("damage", ENEMY_TYPES[e["type"]]["damage"]))
 			var reduction: float = clampf(damage_reduction, 0.0, 0.7)
+
+			# 不灭灯：生命低于 30% 时额外减伤
+			if low_hp_armor > 0.0 and float(player_hp) / float(player_max_hp) < 0.3:
+				reduction = clampf(reduction + low_hp_armor / 100.0, 0.0, 0.85)
 			var actual_damage := maxi(1, int(round(float(enemy_damage) * (1.0 - reduction))))
 			player_hp -= actual_damage
 			damage_cooldown = 0.8
@@ -562,7 +595,7 @@ func fire_sword_energy(direction: Vector2) -> void:
 		var is_critical: bool = randf() < (0.15 + crit_bonus / 100.0)
 
 		if is_critical:
-			damage *= 2
+			damage = int(float(damage) * (2.0 + crit_dmg_bonus))
 
 		projectile_positions.append(player_pos + d * 18.0)
 		projectile_directions.append(d)
@@ -767,13 +800,14 @@ func update_orbs(delta: float) -> void:
 
 		# 超时自动吸收
 		if float(o["life"]) <= 0.0:
-			cultivation += int(o["value"])
+			cultivation += int(round(float(o["value"]) * (1.0 + xp_bonus / 100.0)))
 			orbs.remove_at(i)
 			continue
 
 		# 拾取
 		if dist <= ORB_PICKUP_RADIUS:
-			cultivation += int(o["value"])
+			var gained := int(round(float(o["value"]) * (1.0 + xp_bonus / 100.0)))
+			cultivation += gained
 			orbs.remove_at(i)
 			check_level_up()
 			continue
@@ -822,6 +856,10 @@ func kill_enemy(index: int) -> void:
 	enemies.remove_at(index)
 	kill_count += 1
 
+	# 噬魂幡：击杀回血
+	if kill_heal > 0 and not is_boss:
+		player_hp = mini(player_max_hp, player_hp + kill_heal)
+
 	# 修为改为掉落晶石，需玩家靠近拾取
 	spawn_orb(drop_pos, reward)
 
@@ -853,6 +891,10 @@ func kill_enemy(index: int) -> void:
 	# 仙道选择界面：不补怪
 	if path_choice_pending:
 		return
+
+	# 精英 15% 概率掉法器
+	if is_elite and artifacts.size() < MAX_ARTIFACTS and randf() < 0.15:
+		roll_artifact_choices()
 
 	# 升级由晶石拾取时触发，这里只补怪
 	refill_enemies()
@@ -1103,6 +1145,59 @@ func apply_skill_effect(skill_name: String) -> void:
 	apply_stat(stat, float(data["value"]))
 
 
+# 装备一件法器（应用效果）
+func equip_artifact(name: String) -> void:
+	if not ARTIFACTS.has(name):
+		return
+	if artifacts.has(name):
+		return
+	if artifacts.size() >= MAX_ARTIFACTS:
+		return
+
+	artifacts.append(name)
+	var data: Dictionary = ARTIFACTS[name]
+	apply_stat(str(data["stat"]), float(data["value"]))
+
+	message_text = "获得法器：" + name
+	message_timer = 2.0
+
+
+# 随机抽 3 件未拥有的法器作为候选
+func roll_artifact_choices() -> void:
+	var pool: Array = []
+	for k in ARTIFACTS.keys():
+		if not artifacts.has(k):
+			pool.append(k)
+
+	artifact_choices.clear()
+	pool.shuffle()
+
+	for i in range(mini(3, pool.size())):
+		var k: String = str(pool[i])
+		var d: Dictionary = ARTIFACTS[k]
+		artifact_choices.append({
+			"name": k,
+			"rarity": str(d["rarity"]),
+			"desc": str(d["desc"]),
+		})
+
+	if artifact_choices.size() > 0:
+		artifact_drop_pending = true
+
+
+# 选择法器
+func choose_artifact(index: int) -> void:
+	if not artifact_drop_pending:
+		return
+	if index < 0 or index >= artifact_choices.size():
+		return
+
+	var chosen: Dictionary = artifact_choices[index]
+	equip_artifact(str(chosen["name"]))
+	artifact_drop_pending = false
+	artifact_choices.clear()
+
+
 # 单项属性加成
 func apply_stat(stat: String, value: float) -> void:
 	match stat:
@@ -1129,6 +1224,14 @@ func apply_stat(stat: String, value: float) -> void:
 			sword_element = str(value)   # value 由调用方传元素名
 		"extra_shot":
 			extra_shots += int(value)
+		"xp_bonus":
+			xp_bonus += value
+		"kill_heal":
+			kill_heal += int(value)
+		"low_hp_armor":
+			low_hp_armor += value
+		"crit_dmg":
+			crit_dmg_bonus += value
 
 
 func choose_skill(index: int) -> void:
@@ -1251,6 +1354,10 @@ func choose_tribulation_reward(index: int) -> void:
 	tribulation_reward_pending = false
 	message_text = "劫难奖励：" + str(r["name"])
 	message_timer = 2.0
+
+	# 20% 额外掉法器
+	if artifacts.size() < MAX_ARTIFACTS and randf() < 0.20:
+		roll_artifact_choices()
 
 	# 奖励选完才真正推进境界
 	if pending_realm_advance:
@@ -1408,6 +1515,26 @@ func get_hovered_reward_index() -> int:
 	return get_reward_index_at(get_viewport().get_mouse_position())
 
 
+# 法器卡片（复用功法卡片几何）
+func get_artifact_card_rect(index: int) -> Rect2:
+	return get_skill_card_rect(index)
+
+
+func get_artifact_index_at(pos: Vector2) -> int:
+	if not artifact_drop_pending:
+		return -1
+	for i in range(artifact_choices.size()):
+		if get_artifact_card_rect(i).has_point(pos):
+			return i
+	return -1
+
+
+func get_hovered_artifact_index() -> int:
+	if not artifact_drop_pending:
+		return -1
+	return get_artifact_index_at(get_viewport().get_mouse_position())
+
+
 # 某个坐标点落在哪张卡片上，-1 表示没有
 func get_skill_index_at(pos: Vector2) -> int:
 	if not upgrade_pending:
@@ -1446,10 +1573,15 @@ func _input(event: InputEvent) -> void:
 			if rindex >= 0:
 				choose_tribulation_reward(rindex)
 				get_viewport().set_input_as_handled()
+		elif artifact_drop_pending:
+			var aindex := get_artifact_index_at(event.position)
+			if aindex >= 0:
+				choose_artifact(aindex)
+				get_viewport().set_input_as_handled()
 		return
 
 	# 鼠标移动时刷新悬停高亮
-	if event is InputEventMouseMotion and (upgrade_pending or path_choice_pending or tribulation_reward_pending):
+	if event is InputEventMouseMotion and (upgrade_pending or path_choice_pending or tribulation_reward_pending or artifact_drop_pending):
 		queue_redraw()
 
 
@@ -1487,6 +1619,15 @@ func _unhandled_input(event: InputEvent) -> void:
 				KEY_3:
 					choose_tribulation_reward(2)
 
+		if artifact_drop_pending:
+			match event.keycode:
+				KEY_1:
+					choose_artifact(0)
+				KEY_2:
+					choose_artifact(1)
+				KEY_3:
+					choose_artifact(2)
+
 
 func restart_game() -> void:
 	player_max_hp = 100
@@ -1502,6 +1643,14 @@ func restart_game() -> void:
 	run_time = 0.0
 	game_won = false
 	boss_active = false
+
+	artifacts.clear()
+	artifact_drop_pending = false
+	artifact_choices.clear()
+	xp_bonus = 0.0
+	kill_heal = 0
+	low_hp_armor = 0.0
+	crit_dmg_bonus = 0.0
 
 	tribulation_pending = false
 	tribulation_reward_pending = false
@@ -1684,6 +1833,21 @@ func _draw() -> void:
 			Color("#7fd8ff")
 		)
 
+	# 法器栏
+	if artifacts.size() > 0:
+		var art_text := "法器："
+		for a in artifacts:
+			art_text += "[" + str(a) + "] "
+		draw_string(
+			ThemeDB.fallback_font,
+			Vector2(20, screen_size.y - 70.0),
+			art_text,
+			HORIZONTAL_ALIGNMENT_LEFT,
+			-1,
+			15,
+			Color("#ffd76e")
+		)
+
 	draw_string(
 		ThemeDB.fallback_font,
 		Vector2(20, 105),
@@ -1763,6 +1927,73 @@ func _draw() -> void:
 			200,
 			20,
 			Color("#fff1a8")
+		)
+
+	# 法器选择界面（金色主题）
+	if artifact_drop_pending:
+		draw_rect(Rect2(Vector2.ZERO, screen_size), Color(0.10, 0.08, 0.02, 0.9))
+
+		draw_string(
+			ThemeDB.fallback_font,
+			Vector2(screen_size.x / 2.0 - 200.0, screen_size.y / 2.0 - 130.0),
+			"✦ 获 得 法 器 ✦",
+			HORIZONTAL_ALIGNMENT_CENTER,
+			400,
+			32,
+			Color("#ffd76e")
+		)
+
+		draw_string(
+			ThemeDB.fallback_font,
+			Vector2(screen_size.x / 2.0 - 200.0, screen_size.y / 2.0 - 96.0),
+			"已装备 " + str(artifacts.size()) + " / " + str(MAX_ARTIFACTS),
+			HORIZONTAL_ALIGNMENT_CENTER,
+			400,
+			16,
+			Color("#d4c090")
+		)
+
+		for i in range(artifact_choices.size()):
+			var ac := get_artifact_card_rect(i)
+			var ahev := (i == get_hovered_artifact_index())
+
+			if ahev:
+				draw_rect(ac, Color("#5a4a1a"))
+				draw_rect(ac, Color("#ffd76e"), false, 3.0)
+			else:
+				draw_rect(ac, Color("#3a3010"))
+				draw_rect(ac, Color("#b89a3a"), false, 2.0)
+
+			var art: Dictionary = artifact_choices[i]
+
+			draw_string(
+				ThemeDB.fallback_font,
+				Vector2(ac.position.x + 14.0, ac.position.y + 24.0),
+				str(i + 1) + ". [" + str(art["rarity"]) + "] " + str(art["name"]),
+				HORIZONTAL_ALIGNMENT_LEFT,
+				370,
+				18,
+				Color("#ffd76e")
+			)
+
+			draw_string(
+				ThemeDB.fallback_font,
+				Vector2(ac.position.x + 14.0, ac.position.y + 45.0),
+				str(art["desc"]),
+				HORIZONTAL_ALIGNMENT_LEFT,
+				370,
+				15,
+				Color.WHITE
+			)
+
+		draw_string(
+			ThemeDB.fallback_font,
+			Vector2(screen_size.x / 2.0 - 180.0, screen_size.y / 2.0 + 185.0),
+			"按键盘 1、2、3 或用鼠标点击选择",
+			HORIZONTAL_ALIGNMENT_CENTER,
+			360,
+			18,
+			Color("#ffd76e")
 		)
 
 	# 劫难奖励界面（暗红主题）
